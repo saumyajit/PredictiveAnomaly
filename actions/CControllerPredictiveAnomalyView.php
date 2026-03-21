@@ -33,7 +33,7 @@ class CControllerPredictiveAnomalyView extends CController {
 	];
 
 	protected function init(): void {
-		// HTML page — CSRF handled by Zabbix core on form submit
+		// HTML page — disableCsrfValidation required even for page controllers
 		$this->disableCsrfValidation();
 	}
 

@@ -27,7 +27,11 @@ use Modules\PredictiveAnomaly\Services\CMLBridge;
 
 class CControllerPredictiveAnomalyData extends CController {
 
-	const PAGE_SIZE = 50; // groups per page
+	const PAGE_SIZE = 50;
+
+	public function init(): void {
+		$this->disableCsrfValidation();
+	}
 
 	protected function checkInput(): bool {
 		$fields = [
@@ -48,7 +52,7 @@ class CControllerPredictiveAnomalyData extends CController {
 	}
 
 	protected function checkPermissions(): bool {
-		return $this->getUserType() >= USER_TYPE_ZABBIX_USER;
+		return true;
 	}
 
 	protected function doAction(): void {

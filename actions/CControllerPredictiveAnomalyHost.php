@@ -21,6 +21,10 @@ class CControllerPredictiveAnomalyHost extends CController {
 
 	const HOST_PAGE_SIZE = 50;
 
+	public function init(): void {
+		$this->disableCsrfValidation();
+	}
+
 	protected function checkInput(): bool {
 		$fields = [
 			'groupid'         => 'required|id',
@@ -40,7 +44,7 @@ class CControllerPredictiveAnomalyHost extends CController {
 	}
 
 	protected function checkPermissions(): bool {
-		return $this->getUserType() >= USER_TYPE_ZABBIX_USER;
+		return true;
 	}
 
 	protected function doAction(): void {

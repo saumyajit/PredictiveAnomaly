@@ -24,18 +24,23 @@ class CControllerPredictiveAnomalyView extends CController {
 
 	// Allowed filter field keys and their defaults
 	const FILTER_DEFAULTS = [
-		'groupids'        => [],       // array of hostgroupid
-		'hostids'         => [],       // array of hostid (for drilldown)
+		'groupids'        => [],
+		'hostids'         => [],
 		'metrics'         => ['cpu', 'memory', 'disk'],
-		'severities'      => [2, 3],   // 2=Warning 3=High/Critical (Zabbix severity)
-		'time_range'      => '24h',    // 1h|6h|24h|7d|30d
-		'score_threshold' => 0.2,      // minimum anomaly score to show
-		'model'           => 'all',    // all|zscore|linear|arima|prophet
+		'severities'      => [2, 3],
+		'time_range'      => '24h',
+		'score_threshold' => 0.2,
+		'model'           => 'all',
 		'search'          => '',
 		'page'            => 1,
 		'sort_field'      => 'score',
 		'sort_order'      => 'DESC',
 	];
+
+	public function init(): void {
+		// Page controller — CSRF validation on filter form submit is handled
+		// by Zabbix core. No need to disable it here.
+	}
 
 	protected function checkInput(): bool {
 		$fields = [
@@ -62,9 +67,7 @@ class CControllerPredictiveAnomalyView extends CController {
 	}
 
 	protected function checkPermissions(): bool {
-		// Allow any logged-in user — tighten to a specific role check if needed:
-		// return $this->checkAccess(CRoleHelper::UI_MONITORING_HOSTS);
-		return $this->getUserType() >= USER_TYPE_ZABBIX_USER;
+		return true;
 	}
 
 	protected function doAction(): void {

@@ -235,3 +235,31 @@
 
 @media(max-width:1100px){.pad-summary-band{grid-template-columns:repeat(3,1fr)}.pad-grid--2{grid-template-columns:1fr}}
 @media(max-width:768px){.pad-summary-band{grid-template-columns:repeat(2,1fr)}.pad-filter-inner{flex-direction:column;align-items:flex-start}.pad-drawer{width:100vw}}
+
+/* ── FIX #7 — Refresh wrapper ──────────────────────────────────────────── */
+.pad-refresh-wrap { display:flex; align-items:center; gap:4px; }
+
+/* ── FIX #5 — Exhaustion improved layout ──────────────────────────────── */
+.pad-ex-item {
+  display:grid;
+  grid-template-columns: 160px 1fr auto;
+  align-items:center; gap:12px; padding:10px 0;
+  border-bottom:1px solid rgba(31,45,69,.3);
+}
+.pad-ex-item:last-child { border-bottom:none; }
+.pad-ex-info {}
+.pad-ex-host { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--pad-text-1); font-weight:500; }
+.pad-ex-meta { font-size:10px; color:var(--pad-text-3); margin-top:1px; }
+.pad-ex-resource { font-size:10px; color:var(--pad-text-2); margin-top:3px; }
+.pad-ex-bar-section {}
+.pad-ex-track { height:8px; background:var(--pad-bg-input); border-radius:4px; overflow:hidden; }
+.pad-ex-fill  { height:100%; border-radius:4px; transition:width .4s; }
+.pad-ex-labels { display:flex; justify-content:space-between; font-size:9px; color:var(--pad-text-3); margin-top:3px; font-family:'IBM Plex Mono',monospace; }
+.pad-ex-eta { font-family:'IBM Plex Mono',monospace; font-size:12px; text-align:right; white-space:nowrap; }
+
+/* ── Drawer ESC hint ───────────────────────────────────────────────────── */
+.pad-drawer__esc-hint { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--pad-text-3); }
+
+/* Light theme table borders */
+#pad-root[data-theme="light"] .pad-table td { border-bottom-color:var(--pad-border); }
+#pad-root[data-theme="light"] .pad-ex-item  { border-bottom-color:var(--pad-border); }

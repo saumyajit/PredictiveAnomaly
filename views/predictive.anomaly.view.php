@@ -7,6 +7,9 @@
 $filter = $data['filter'];
 ?>
 
+<!-- Chart.js — required for Forecasts tab -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
 <div id="pad-root" data-theme="dark">
 
 <!-- ═══ FILTER BAR ═══ -->
@@ -41,12 +44,13 @@ $filter = $data['filter'];
         </div>
       </div>
 
-      <!-- Metrics -->
+      <!-- Metrics — checkboxes control form submit; JS toggles active class + checked state -->
       <div class="pad-filter-field">
         <label class="pad-flabel"><?= _('Metrics') ?></label>
-        <div class="pad-chip-group">
+        <div class="pad-chip-group" id="pad-metric-chips">
           <?php foreach (['cpu'=>'CPU','memory'=>'Memory','disk'=>'Disk','network'=>'Network','iops'=>'IOPS','load'=>'Load'] as $k=>$l): ?>
-          <label class="pad-chip <?= in_array($k,$filter['metrics'])?'active':'' ?>">
+          <label class="pad-chip <?= in_array($k,$filter['metrics'])?'active':'' ?>"
+                 data-metric="<?= $k ?>">
             <input type="checkbox" name="metrics[]" value="<?= $k ?>"
                    <?= in_array($k,$filter['metrics'])?'checked':'' ?> hidden/>
             <?= $l ?>
@@ -109,8 +113,9 @@ $filter = $data['filter'];
       <!-- Search -->
       <div class="pad-filter-field">
         <label class="pad-flabel"><?= _('Search') ?></label>
-        <input type="text" name="search" value="<?= htmlspecialchars($filter['search']) ?>"
-               class="pad-text-input" placeholder="<?= _('Group or host…') ?>"/>
+        <input type="text" name="search" id="pad-search-input"
+               value="<?= htmlspecialchars($filter['search']) ?>"
+               class="pad-text-input" placeholder="<?= _('Group name…') ?>"/>
       </div>
 
       <!-- Actions -->
@@ -172,7 +177,20 @@ $filter = $data['filter'];
   </div>
   <div class="pad-toolbar-right">
     <button class="pad-btn pad-btn--sm" id="pad-export-csv">⬇ CSV</button>
-    <button class="pad-btn pad-btn--sm pad-btn--primary" id="pad-refresh-btn">⟳ <?= _('Refresh') ?></button>
+
+    <!-- Auto-refresh control — FIX #8 -->
+    <div class="pad-refresh-wrap">
+      <select id="pad-refresh-select" class="pad-select pad-select--sm" title="<?= _('Auto-refresh interval') ?>">
+        <option value="0"><?= _('No refresh') ?></option>
+        <option value="30">30s</option>
+        <option value="60" selected>1m</option>
+        <option value="120">2m</option>
+        <option value="300">5m</option>
+        <option value="600">10m</option>
+      </select>
+      <button class="pad-btn pad-btn--sm pad-btn--primary" id="pad-refresh-btn">⟳ <?= _('Refresh') ?></button>
+    </div>
+
     <button class="pad-btn pad-btn--sm" id="pad-theme-btn">🌗</button>
     <span class="pad-live-indicator">
       <span class="pad-live-dot" id="pad-live-dot"></span>
@@ -262,7 +280,14 @@ $filter = $data['filter'];
     <div class="pad-card">
       <div class="pad-card__head">
         <div class="pad-card__title">📉 <?= _('Resource Exhaustion Estimates') ?></div>
-        <div class="pad-card__actions"><span class="pad-tag pad-tag--native">Zabbix Trends</span></div>
+        <div class="pad-card__actions">
+          <span class="pad-tag pad-tag--native">Zabbix Trends</span>
+          <select id="pad-ex-metric" class="pad-select pad-select--sm">
+            <option value="disk"><?= _('Disk') ?></option>
+            <option value="memory"><?= _('Memory') ?></option>
+            <option value="cpu"><?= _('CPU') ?></option>
+          </select>
+        </div>
       </div>
       <div class="pad-card__body" id="pad-exhaust-body">
         <div class="pad-spinner-wrap"><div class="pad-spinner"></div></div>
@@ -336,6 +361,7 @@ $filter = $data['filter'];
       </div>
       <div class="pad-drawer__actions">
         <span class="pad-tag pad-tag--zscore">Drilldown</span>
+        <span class="pad-drawer__esc-hint">ESC to close</span>
         <button class="pad-drawer__close" id="pad-drawer-close">✕</button>
       </div>
     </div>
@@ -359,11 +385,10 @@ window.PAD_CONFIG = <?= json_encode([
 	'time_from'       => $data['time_from'],
 	'time_till'       => $data['time_till'],
 	'strings' => [
-		'loading'       => _('Loading…'),
-		'no_data'       => _('No anomalies found for current filters.'),
-		'drilldown'     => _('Drilldown →'),
-		'page_of'       => _('Page %d of %d'),
-		'host_in_zbx'   => _('Open in Zabbix'),
+		'loading'    => _('Loading…'),
+		'no_data'    => _('No anomalies found for current filters.'),
+		'drilldown'  => _('Drilldown →'),
+		'page_of'    => _('Page %d of %d'),
 	],
 ]) ?>;
 </script>

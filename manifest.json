@@ -8,26 +8,9 @@
 	"description": "Predictive anomaly detection and forecasting across 25,000+ hosts using Zabbix native trends, Z-score detection, and linear regression forecasting.",
 	"actions": {
 		"predictive.anomaly.view": {
-			"class": "CControllerPredictiveAnomalyView",
+			"class": "PredictiveAnomalyView",
 			"view": "predictive.anomaly.view",
 			"layout": "layout.htmlpage"
-		},
-		"predictive.anomaly.data": {
-			"class": "CControllerPredictiveAnomalyData"
-		},
-		"predictive.anomaly.host": {
-			"class": "CControllerPredictiveAnomalyHost"
-		},
-		"predictive.anomaly.forecast": {
-			"class": "CControllerPredictiveAnomalyForecast"
 		}
-	},
-	"assets": {
-		"css": [
-			"predictive-anomaly.css"
-		],
-		"js": [
-			"predictive-anomaly.js"
-		]
 	}
 }

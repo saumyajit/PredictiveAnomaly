@@ -1,16 +1,16 @@
 {
-	"manifest_version": 2,
-	"id": "predictive-anomaly-dashboard",
-	"name": "Predictive Anomaly Dashboard",
-	"version": "1.0.0",
-	"namespace": "PredictiveAnomaly",
-	"author": "Zabbix Module",
-	"description": "Predictive anomaly detection and forecasting across 25,000+ hosts using Zabbix native trends, Z-score detection, and linear regression forecasting.",
-	"actions": {
-		"predictive.anomaly.view": {
-			"class": "PredictiveAnomalyView",
-			"view": "predictive.anomaly.view",
-			"layout": "layout.htmlpage"
-		}
-	}
+    "manifest_version": 2.0,
+    "id": "predictive-anomaly-dashboard",
+    "name": "Predictive Anomaly Dashboard",
+    "version": "2.0",
+    "author": "Saumyajit Pramanik",
+    "namespace": "PredictiveAnomaly",
+    "url": "",
+    "description": "Predictive anomaly detection and forecasting across 25,000+ hosts using Zabbix native trends, Z-score detection, and linear regression forecasting.",
+    "actions": {
+        "predictive.anomaly.view": {
+            "class": "PredictiveAnomalyView",
+            "view": "predictive.anomaly.view"
+        }
+    }
 }

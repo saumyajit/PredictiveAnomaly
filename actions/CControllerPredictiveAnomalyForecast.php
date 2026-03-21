@@ -8,8 +8,6 @@
 namespace Modules\PredictiveAnomaly\actions;
 
 use CController;
-use CControllerResponseData;
-use CControllerResponseFatal;
 use API;
 use Modules\PredictiveAnomaly\services\CAnomalyEngine;
 use Modules\PredictiveAnomaly\services\CMLBridge;
@@ -20,6 +18,14 @@ class CControllerPredictiveAnomalyForecast extends CController {
 		$this->disableCsrfValidation();
 	}
 
+	private function sendJson(array $payload): void {
+		// Output JSON directly, bypassing Zabbix layout rendering.
+		// JSON actions have no "view" or "layout" in manifest.json.
+		header('Content-Type: application/json; charset=UTF-8');
+		echo json_encode($payload);
+		exit;
+	}
+
 	protected function checkInput(): bool {
 		$fields = [
 			'itemid'     => 'required|id',
@@ -28,7 +34,8 @@ class CControllerPredictiveAnomalyForecast extends CController {
 		];
 		$ret = $this->validateInput($fields);
 		if (!$ret) {
-			$this->setResponse(new CControllerResponseFatal());
+			// invalid input — sendJson error
+			$this->sendJson(['error' => 'Invalid input']);
 		}
 		return $ret;
 	}
@@ -55,7 +62,7 @@ class CControllerPredictiveAnomalyForecast extends CController {
 		]);
 
 		if (!$items) {
-			$this->setResponse(new CControllerResponseData(['error' => 'Item not found']));
+			$this->sendJson(['error' => 'Item not found']);
 			return;
 		}
 		$item = reset($items);
@@ -94,7 +101,7 @@ class CControllerPredictiveAnomalyForecast extends CController {
 		}
 
 		if (count($raw_series) < 5) {
-			$this->setResponse(new CControllerResponseData(['error' => 'Insufficient data']));
+			$this->sendJson(['error' => 'Insufficient data']);
 			return;
 		}
 
@@ -152,7 +159,7 @@ class CControllerPredictiveAnomalyForecast extends CController {
 			}
 		}
 
-		$this->setResponse(new CControllerResponseData([
+		$this->sendJson([
 			'itemid'      => $itemid,
 			'item_name'   => $item['name'],
 			'units'       => $item['units'],
@@ -169,6 +176,6 @@ class CControllerPredictiveAnomalyForecast extends CController {
 				'model'      => $ml_result ? ($ml_result['model'] ?? 'linear') : 'linear+zscore',
 				'accuracy'   => $ml_result['accuracy'] ?? null,
 			],
-		]));
+		]);
 	}
 }

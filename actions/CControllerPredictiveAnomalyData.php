@@ -10,8 +10,6 @@
 namespace Modules\PredictiveAnomaly\actions;
 
 use CController;
-use CControllerResponseData;
-use CControllerResponseFatal;
 use API;
 use Modules\PredictiveAnomaly\services\CAnomalyEngine;
 use Modules\PredictiveAnomaly\services\CMLBridge;
@@ -22,6 +20,14 @@ class CControllerPredictiveAnomalyData extends CController {
 
 	protected function init(): void {
 		$this->disableCsrfValidation();
+	}
+
+	private function sendJson(array $payload): void {
+		// Output JSON directly, bypassing Zabbix layout rendering.
+		// JSON actions have no "view" or "layout" in manifest.json.
+		header('Content-Type: application/json; charset=UTF-8');
+		echo json_encode($payload);
+		exit;
 	}
 
 	protected function checkInput(): bool {
@@ -37,7 +43,8 @@ class CControllerPredictiveAnomalyData extends CController {
 		];
 		$ret = $this->validateInput($fields);
 		if (!$ret) {
-			$this->setResponse(new CControllerResponseFatal());
+			// invalid input — sendJson error
+			$this->sendJson(['error' => 'Invalid input']);
 		}
 		return $ret;
 	}
@@ -113,14 +120,14 @@ class CControllerPredictiveAnomalyData extends CController {
 			'exhaustion_risk'  => count(array_filter($group_results, fn($g) => ($g['disk'] ?? 0) >= 80)),
 		];
 
-		$this->setResponse(new CControllerResponseData([
+		$this->sendJson([
 			'groups'       => $group_results,
 			'summary'      => $summary,
 			'total_groups' => $total_groups,
 			'page'         => $page,
 			'page_size'    => self::PAGE_SIZE,
 			'total_pages'  => $total_pages,
-		]));
+		]);
 	}
 
 	private function processGroup(

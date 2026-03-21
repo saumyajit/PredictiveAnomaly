@@ -14,6 +14,7 @@ use CControllerResponseData;
 use CControllerResponseFatal;
 use CProfile;
 use API;
+use CSettingsHelper;
 
 class CControllerPredictiveAnomalyView extends CController {
 
@@ -115,6 +116,12 @@ class CControllerPredictiveAnomalyView extends CController {
 		$time_from = time() - ($time_map[$filter['time_range']] ?? 86400);
 		$time_till = time();
 
+		// ── Add keys expected by other modules' layout.htmlpage.php ────────────
+		// IncidentInvestigation / WorkflowOps layout.htmlpage.php expects these
+		// $data keys. We provide safe defaults so their layout doesn't throw
+		// "Trying to access array offset on int" warnings.
+		$server_check_interval = CSettingsHelper::get(CSettingsHelper::SERVER_CHECK_INTERVAL);
+
 		$this->setResponse(new CControllerResponseData([
 			'filter'      => $filter,
 			'all_groups'  => array_values($all_groups),
@@ -122,6 +129,12 @@ class CControllerPredictiveAnomalyView extends CController {
 			'time_from'   => $time_from,
 			'time_till'   => $time_till,
 			'title'       => _('Predictive Anomaly Dashboard'),
+			// Standard layout.htmlpage keys — prevent warnings from other modules' layouts
+			'page'             => ['title' => _('Predictive Anomaly Dashboard')],
+			'javascript'       => ['files' => []],
+			'stylesheet'       => ['files' => []],
+			'web_layout_mode'  => ZBX_LAYOUT_NORMAL,
+			'config'           => ['server_check_interval' => $server_check_interval],
 		]));
 	}
 }

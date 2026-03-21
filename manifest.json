@@ -10,7 +10,7 @@
     "actions": {
         "predictive.anomaly.view": {
             "class": "PredictiveAnomalyView",
-            "view": "predictive.anomaly.view"
+            "view": "predictive.anomaly"
         }
     }
 }

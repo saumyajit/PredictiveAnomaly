@@ -15,7 +15,7 @@ use CControllerResponseFatal;
 use CProfile;
 use API;
 
-class PredictiveAnomalyView extends CController {
+class CControllerPredictiveAnomalyView extends CController {
 
 	const PROFILE_KEY = 'web.predictive.anomaly';
 

@@ -10,7 +10,7 @@
     "actions": {
         "predictive.anomaly.view": {
             "class": "CControllerPredictiveAnomalyView",
-            "view": "predictive.anomaly",
+            "view": "predictive.anomaly.view",
             "layout": "layout.htmlpage"
         },
 		"predictive.anomaly.host": {

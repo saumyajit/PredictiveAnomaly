@@ -225,7 +225,7 @@ class CControllerPredictiveAnomalyData extends CController {
 					$iid  = $item['itemid'];
 					$vals = $trend_data[$iid] ?? [];
 					if ($vals) {
-						$avg_val += end(array_column($vals, 'value'));
+						$col = array_column($vals, 'value'); $avg_val += end($col);
 						$cnt++;
 					}
 				}

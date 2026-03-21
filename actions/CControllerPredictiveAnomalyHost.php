@@ -13,7 +13,6 @@ namespace Modules\PredictiveAnomaly\Actions;
 use CController;
 use CControllerResponseData;
 use CControllerResponseFatal;
-use CWebUser;
 use API;
 use Modules\PredictiveAnomaly\Services\CAnomalyEngine;
 use Modules\PredictiveAnomaly\Services\CMLBridge;
@@ -41,7 +40,7 @@ class CControllerPredictiveAnomalyHost extends CController {
 	}
 
 	protected function checkPermissions(): bool {
-		return CWebUser::isLoggedIn();
+		return $this->getUserType() >= USER_TYPE_ZABBIX_USER;
 	}
 
 	protected function doAction(): void {

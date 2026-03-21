@@ -15,7 +15,6 @@ use CController;
 use CControllerResponseData;
 use CControllerResponseFatal;
 use CProfile;
-use CWebUser;
 use API;
 
 class CControllerPredictiveAnomalyView extends CController {
@@ -45,7 +44,7 @@ class CControllerPredictiveAnomalyView extends CController {
 			'metrics'         => 'array',
 			'severities'      => 'array',
 			'time_range'      => 'in 1h,6h,24h,7d,30d',
-			'score_threshold' => 'ge 0.0|le 1.0',
+			'score_threshold' => 'string',   // cast to float in doAction
 			'model'           => 'in all,zscore,linear,arima,prophet',
 			'search'          => 'string',
 			'page'            => 'ge 1',
@@ -63,7 +62,9 @@ class CControllerPredictiveAnomalyView extends CController {
 	}
 
 	protected function checkPermissions(): bool {
-		return CWebUser::isLoggedIn();
+		// Allow any logged-in user — tighten to a specific role check if needed:
+		// return $this->checkAccess(CRoleHelper::UI_MONITORING_HOSTS);
+		return $this->getUserType() >= USER_TYPE_ZABBIX_USER;
 	}
 
 	protected function doAction(): void {

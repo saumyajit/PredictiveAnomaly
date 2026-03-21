@@ -8,8 +8,6 @@
 namespace Modules\PredictiveAnomaly\actions;
 
 use CController;
-use CControllerResponseData;
-use CControllerResponseFatal;
 use API;
 use Modules\PredictiveAnomaly\services\CAnomalyEngine;
 use Modules\PredictiveAnomaly\services\CMLBridge;
@@ -20,6 +18,14 @@ class CControllerPredictiveAnomalyHost extends CController {
 
 	protected function init(): void {
 		$this->disableCsrfValidation();
+	}
+
+	private function sendJson(array $payload): void {
+		// Output JSON directly, bypassing Zabbix layout rendering.
+		// JSON actions have no "view" or "layout" in manifest.json.
+		header('Content-Type: application/json; charset=UTF-8');
+		echo json_encode($payload);
+		exit;
 	}
 
 	protected function checkInput(): bool {
@@ -35,7 +41,8 @@ class CControllerPredictiveAnomalyHost extends CController {
 		];
 		$ret = $this->validateInput($fields);
 		if (!$ret) {
-			$this->setResponse(new CControllerResponseFatal());
+			// invalid input — sendJson error
+			$this->sendJson(['error' => 'Invalid input']);
 		}
 		return $ret;
 	}
@@ -223,7 +230,7 @@ class CControllerPredictiveAnomalyHost extends CController {
 			return $sort_order === 'DESC' ? -$cmp : $cmp;
 		});
 
-		$this->setResponse(new CControllerResponseData([
+		$this->sendJson([
 			'groupid'     => $groupid,
 			'group_name'  => $group['name'],
 			'total_hosts' => $total_hosts,
@@ -231,7 +238,7 @@ class CControllerPredictiveAnomalyHost extends CController {
 			'page'        => $page,
 			'page_size'   => self::PAGE_SIZE,
 			'total_pages' => (int) ceil($total_hosts / self::PAGE_SIZE),
-		]));
+		]);
 	}
 
 	private function blendScore(?array $z, ?array $lr, ?array $ml, string $model): float {

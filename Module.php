@@ -8,7 +8,7 @@
 
 namespace Modules\PredictiveAnomaly;
 
-use Core\CModule;
+use Zabbix\Core\CModule;
 use APP;
 use CMenuItem;
 

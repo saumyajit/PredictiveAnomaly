@@ -10,7 +10,22 @@
     "actions": {
         "predictive.anomaly.view": {
             "class": "PredictiveAnomalyView",
-            "view": "predictive.anomaly"
-        }
+            "view": "predictive.anomaly",
+            "layout": "layout.htmlpage"
+        },
+		"predictive.anomaly.host": {
+			"class": "CControllerPredictiveAnomalyHost"
+		},
+		"predictive.anomaly.forecast": {
+			"class": "CControllerPredictiveAnomalyForecast"
+		}
+	},
+	"assets": {
+		"css": [
+			"predictive-anomaly.css"
+		],
+		"js": [
+			"predictive-anomaly.js"
+		]
     }
 }

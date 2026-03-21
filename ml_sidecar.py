@@ -1,297 +1,121 @@
 #!/usr/bin/env python3
 """
-Predictive Anomaly Dashboard — ML Sidecar Service
---------------------------------------------------
-Optional Flask microservice providing Prophet and ARIMA forecasts.
-The Zabbix module works fully without this service (falls back to
-native Z-score + linear regression in PHP). Only start this if you
-want ML-enriched confidence intervals and seasonal decomposition.
+Predictive Anomaly Dashboard — Optional ML Sidecar
+Module works fully without this. Start only for Prophet/ARIMA enrichment.
 
-Install:
-  pip install flask prophet statsmodels numpy scipy
-
-Run:
-  python3 ml_sidecar.py
-  # or: gunicorn -w 4 -b 127.0.0.1:5001 ml_sidecar:app
-
-The PHP CMLBridge pings GET /health before each request batch.
-Heavy models are cached per itemid to avoid re-fitting every call.
+Install: pip install flask prophet statsmodels numpy
+Run:     python3 ml_sidecar.py
 """
-
-import os
-import json
-import logging
-import hashlib
-import numpy as np
-from datetime import datetime, timedelta
-from functools import lru_cache
+import os, json, logging, numpy as np
+from datetime import datetime
 from threading import Lock
-
 from flask import Flask, request, jsonify
 
-# Optional heavy deps — graceful import
 try:
     from prophet import Prophet
-    PROPHET_AVAILABLE = True
+    PROPHET = True
 except ImportError:
-    PROPHET_AVAILABLE = False
-    logging.warning("Prophet not installed. /forecast?model=prophet will be skipped.")
+    PROPHET = False
 
 try:
     from statsmodels.tsa.arima.model import ARIMA
-    from statsmodels.tools.sm_exceptions import ConvergenceWarning
-    import warnings
-    warnings.filterwarnings("ignore", category=ConvergenceWarning)
-    ARIMA_AVAILABLE = True
+    ARIMA_OK = True
 except ImportError:
-    ARIMA_AVAILABLE = False
-    logging.warning("statsmodels not installed. /forecast?model=arima will be skipped.")
+    ARIMA_OK = False
 
-# ─────────────────────────────────────────────────────────────────────────────
-app = Flask(__name__)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-log = logging.getLogger(__name__)
-
-# Simple in-memory model cache (itemid → fitted model + timestamp)
-MODEL_CACHE      = {}
-MODEL_CACHE_TTL  = 300  # seconds — refit if older than 5 min
-MODEL_CACHE_LOCK = Lock()
-
-FORECAST_STEPS   = 12  # points ahead to forecast
-
-# ─────────────────────────────────────────────────────────────────────────────
-# HEALTH
-# ─────────────────────────────────────────────────────────────────────────────
+app    = Flask(__name__)
+CACHE  = {}
+LOCK   = Lock()
+STEPS  = 12
 
 @app.get('/health')
 def health():
-    return jsonify({
-        'status':   'ok',
-        'prophet':  PROPHET_AVAILABLE,
-        'arima':    ARIMA_AVAILABLE,
-        'version':  '1.0.0',
-        'cached_models': len(MODEL_CACHE),
-    })
-
-# ─────────────────────────────────────────────────────────────────────────────
-# FORECAST
-# ─────────────────────────────────────────────────────────────────────────────
+    return jsonify({'status':'ok','prophet':PROPHET,'arima':ARIMA_OK,'cached':len(CACHE)})
 
 @app.post('/forecast')
 def forecast():
-    body = request.get_json(force=True, silent=True) or {}
+    body   = request.get_json(force=True, silent=True) or {}
+    values = [float(v) for v in body.get('values',[])]
+    clocks = [int(c) for c in body.get('clocks',[])]
+    model  = body.get('model','all')
+    iid    = body.get('itemid',0)
+    if len(values) < 6:
+        return jsonify({'error':'Insufficient data'}), 400
 
-    itemid = body.get('itemid')
-    values = body.get('values', [])
-    clocks = body.get('clocks', [])
-    model  = body.get('model', 'all')   # all | arima | prophet
-
-    if not values or not clocks or len(values) < 6:
-        return jsonify({'error': 'Insufficient data'}), 400
-
-    values = [float(v) for v in values]
-    clocks = [int(c) for c in clocks]
-
+    step = max(int((clocks[-1]-clocks[0])/max(len(clocks)-1,1)), 60) if len(clocks)>1 else 3600
     result = {}
 
-    # Determine step size from data
-    step = int((clocks[-1] - clocks[0]) / max(1, len(clocks) - 1))
-    step = max(step, 60)
-
-    # ── ARIMA ──────────────────────────────────────────────────────────────
-    if ARIMA_AVAILABLE and model in ('all', 'arima'):
+    if ARIMA_OK and model in ('all','arima') and not result:
         try:
-            arima_result = run_arima(itemid, values, clocks, step)
-            result.update(arima_result)
+            result = run_arima(iid, values, clocks, step)
             result['model'] = 'arima'
         except Exception as e:
-            log.warning(f"ARIMA failed for item {itemid}: {e}")
+            logging.warning(f'ARIMA failed: {e}')
 
-    # ── Prophet ────────────────────────────────────────────────────────────
-    if PROPHET_AVAILABLE and model in ('all', 'prophet') and not result:
+    if PROPHET and model in ('all','prophet') and not result:
         try:
-            prophet_result = run_prophet(itemid, values, clocks, step)
-            result.update(prophet_result)
+            result = run_prophet(iid, values, clocks, step)
             result['model'] = 'prophet'
         except Exception as e:
-            log.warning(f"Prophet failed for item {itemid}: {e}")
+            logging.warning(f'Prophet failed: {e}')
 
-    if not result:
-        return jsonify({'error': 'No model available or all models failed'}), 503
+    return jsonify(result) if result else (jsonify({'error':'No model available'}), 503)
 
-    return jsonify(result)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ARIMA IMPLEMENTATION
-# ─────────────────────────────────────────────────────────────────────────────
-
-def run_arima(itemid, values, clocks, step):
-    cache_key = f"arima_{itemid}_{hash(tuple(values[-10:]))}"
-    cached    = _get_cached(cache_key)
-    if cached:
-        return cached
-
-    # Auto-select order using simple heuristic
-    order = _select_arima_order(values)
-
-    model  = ARIMA(values, order=order)
-    fitted = model.fit()
-
-    forecast_result = fitted.get_forecast(steps=FORECAST_STEPS)
-    fc_mean  = forecast_result.predicted_mean.tolist()
-    fc_ci    = forecast_result.conf_int(alpha=0.05)
-    fc_upper = fc_ci.iloc[:, 1].tolist()
-    fc_lower = fc_ci.iloc[:, 0].tolist()
-
-    # Anomaly score from residuals
-    residuals   = fitted.resid.tolist()
-    res_std     = float(np.std(residuals)) if residuals else 1.0
-    max_residual= float(max(abs(r) for r in residuals)) if residuals else 0
-    score       = min(1.0, max_residual / (res_std * 3 + 1e-9))
-
-    # Accuracy (in-sample MAPE)
-    actuals    = values
-    preds      = fitted.fittedvalues.tolist()
-    mape       = _mape(actuals, preds)
-    accuracy   = round(max(0, 100 - mape), 1)
-
-    result = {
-        'forecast_series': fc_mean,
-        'ci_upper':        fc_upper,
-        'ci_lower':        fc_lower,
-        'score':           round(score, 4),
-        'accuracy':        accuracy,
-        'mape':            round(mape, 2),
-        'order':           list(order),
-        'aic':             round(fitted.aic, 2),
-    }
-
-    _set_cached(cache_key, result)
-    return result
-
-
-def _select_arima_order(values):
-    """Heuristic order selection: try (1,1,1) and (2,1,2), pick lower AIC."""
-    best_order = (1, 1, 1)
-    best_aic   = float('inf')
-
-    for order in [(1, 1, 1), (2, 1, 2), (1, 1, 0), (0, 1, 1)]:
+def run_arima(iid, values, clocks, step):
+    key = f'a{iid}_{hash(tuple(values[-5:]))}'
+    cached = _get(key)
+    if cached: return cached
+    best_order, best_aic = (1,1,1), float('inf')
+    for order in [(1,1,1),(2,1,2),(1,1,0),(0,1,1)]:
         try:
-            m   = ARIMA(values, order=order)
-            fit = m.fit()
-            if fit.aic < best_aic:
-                best_aic   = fit.aic
-                best_order = order
-        except Exception:
-            continue
+            aic = ARIMA(values, order=order).fit().aic
+            if aic < best_aic: best_aic, best_order = aic, order
+        except: pass
+    fit = ARIMA(values, order=best_order).fit()
+    fc  = fit.get_forecast(STEPS)
+    ci  = fc.conf_int(alpha=0.05)
+    res = fit.resid.tolist()
+    mape = _mape(values, fit.fittedvalues.tolist())
+    r = {'forecast_series':fc.predicted_mean.tolist(),'ci_upper':ci.iloc[:,1].tolist(),'ci_lower':ci.iloc[:,0].tolist(),'score':round(min(1.0,max(map(abs,res))/(np.std(res)*3+1e-9)),4),'accuracy':round(max(0,100-mape),1),'mape':round(mape,2)}
+    _set(key, r)
+    return r
 
-    return best_order
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PROPHET IMPLEMENTATION
-# ─────────────────────────────────────────────────────────────────────────────
-
-def run_prophet(itemid, values, clocks, step):
+def run_prophet(iid, values, clocks, step):
     import pandas as pd
-
-    cache_key = f"prophet_{itemid}_{hash(tuple(values[-10:]))}"
-    cached    = _get_cached(cache_key)
-    if cached:
-        return cached
-
-    # Build Prophet dataframe
-    df = pd.DataFrame({
-        'ds': [datetime.utcfromtimestamp(c) for c in clocks],
-        'y':  values,
-    })
-
-    m = Prophet(
-        interval_width       = 0.95,
-        changepoint_prior_scale = 0.05,
-        daily_seasonality    = len(values) > 48,   # only if we have enough data
-        weekly_seasonality   = len(values) > 336,
-        yearly_seasonality   = False,
-    )
+    key = f'p{iid}_{hash(tuple(values[-5:]))}'
+    cached = _get(key)
+    if cached: return cached
+    df = pd.DataFrame({'ds':[datetime.utcfromtimestamp(c) for c in clocks],'y':values})
+    m  = Prophet(interval_width=0.95,changepoint_prior_scale=0.05,daily_seasonality=len(values)>48,weekly_seasonality=False,yearly_seasonality=False)
     m.fit(df)
+    freq = {60:'1min',300:'5min',900:'15min',3600:'1h',21600:'6h'}.get(step,'1D')
+    future = m.make_future_dataframe(periods=STEPS, freq=freq)
+    fc = m.predict(future).tail(STEPS)
+    hist = m.predict(df)
+    mape = _mape(values, hist['yhat'].tolist())
+    r = {'forecast_series':fc['yhat'].tolist(),'ci_upper':fc['yhat_upper'].tolist(),'ci_lower':fc['yhat_lower'].tolist(),'score':round(min(1.0,np.mean([abs(a-p) for a,p in zip(values,hist['yhat'].tolist())])/(np.std(values)+1e-9)),4),'accuracy':round(max(0,100-mape),1),'mape':round(mape,2)}
+    _set(key, r)
+    return r
 
-    # Future dataframe
-    freq_str = _step_to_freq(step)
-    future   = m.make_future_dataframe(periods=FORECAST_STEPS, freq=freq_str)
-    forecast = m.predict(future)
+def _mape(a, p):
+    pairs = [(x,y) for x,y in zip(a,p) if abs(x)>1e-9]
+    return float(np.mean([abs(x-y)/abs(x)*100 for x,y in pairs])) if pairs else 0
 
-    # Forecast only (not history)
-    fc_rows  = forecast.tail(FORECAST_STEPS)
-    fc_mean  = fc_rows['yhat'].tolist()
-    fc_upper = fc_rows['yhat_upper'].tolist()
-    fc_lower = fc_rows['yhat_lower'].tolist()
+def _get(k):
+    with LOCK:
+        e = CACHE.get(k)
+        return e['d'] if e and (datetime.utcnow()-e['t']).seconds<300 else None
 
-    # Score from historical forecast error
-    hist    = forecast.head(len(values))
-    residuals = [abs(a - p) for a, p in zip(values, hist['yhat'].tolist())]
-    std_vals  = float(np.std(values)) or 1.0
-    score     = min(1.0, float(np.mean(residuals)) / (std_vals + 1e-9))
-
-    mape     = _mape(values, hist['yhat'].tolist())
-    accuracy = round(max(0, 100 - mape), 1)
-
-    result = {
-        'forecast_series': fc_mean,
-        'ci_upper':        fc_upper,
-        'ci_lower':        fc_lower,
-        'score':           round(score, 4),
-        'accuracy':        accuracy,
-        'mape':            round(mape, 2),
-        'changepoints':    len(m.changepoints),
-    }
-
-    _set_cached(cache_key, result)
-    return result
-
-
-def _step_to_freq(step_seconds):
-    if step_seconds <= 60:   return '1min'
-    if step_seconds <= 300:  return '5min'
-    if step_seconds <= 900:  return '15min'
-    if step_seconds <= 3600: return '1h'
-    if step_seconds <= 21600:return '6h'
-    return '1D'
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CACHE HELPERS
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _get_cached(key):
-    with MODEL_CACHE_LOCK:
-        entry = MODEL_CACHE.get(key)
-        if entry and (datetime.utcnow() - entry['ts']).seconds < MODEL_CACHE_TTL:
-            return entry['data']
-    return None
-
-def _set_cached(key, data):
-    with MODEL_CACHE_LOCK:
-        # Cap cache size
-        if len(MODEL_CACHE) > 2000:
-            oldest = min(MODEL_CACHE, key=lambda k: MODEL_CACHE[k]['ts'])
-            del MODEL_CACHE[oldest]
-        MODEL_CACHE[key] = {'data': data, 'ts': datetime.utcnow()}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# UTILS
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _mape(actuals, predictions):
-    """Mean Absolute Percentage Error — ignores zeros in actuals."""
-    pairs = [(a, p) for a, p in zip(actuals, predictions) if abs(a) > 1e-9]
-    if not pairs:
-        return 0.0
-    return float(np.mean([abs(a - p) / abs(a) * 100 for a, p in pairs]))
-
-# ─────────────────────────────────────────────────────────────────────────────
+def _set(k, d):
+    with LOCK:
+        if len(CACHE)>2000:
+            oldest = min(CACHE, key=lambda x: CACHE[x]['t'])
+            del CACHE[oldest]
+        CACHE[k] = {'d':d,'t':datetime.utcnow()}
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PAD_ML_PORT', 5001))
-    host = os.environ.get('PAD_ML_HOST', '127.0.0.1')
-    log.info(f"ML Sidecar starting on {host}:{port}")
-    log.info(f"Prophet: {'available' if PROPHET_AVAILABLE else 'NOT installed'}")
-    log.info(f"ARIMA:   {'available' if ARIMA_AVAILABLE else 'NOT installed'}")
+    logging.basicConfig(level=logging.INFO)
+    port = int(os.environ.get('PAD_ML_PORT',5001))
+    host = os.environ.get('PAD_ML_HOST','127.0.0.1')
+    logging.info(f'ML Sidecar: {host}:{port} | Prophet:{PROPHET} | ARIMA:{ARIMA_OK}')
     app.run(host=host, port=port, debug=False)

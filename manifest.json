@@ -3,25 +3,31 @@
 	"id": "predictive-anomaly-dashboard",
 	"name": "Predictive Anomaly Dashboard",
 	"version": "1.0.0",
-	"author": "Zabbix Module",
-	"description": "Predictive anomaly detection and forecasting dashboard using Zabbix native trends with optional ML enrichment. Supports 25,000+ host environments with aggregated group views and host-level drilldown.",
 	"namespace": "PredictiveAnomaly",
+	"author": "Zabbix Module",
+	"description": "Predictive anomaly detection and forecasting across 25,000+ hosts using Zabbix native trends, Z-score detection, and linear regression forecasting.",
 	"actions": {
 		"predictive.anomaly.view": {
 			"class": "CControllerPredictiveAnomalyView",
-			"view": "predictive.anomaly.view"
+			"view": "predictive.anomaly.view",
+			"layout": "layout.htmlpage"
 		},
 		"predictive.anomaly.data": {
-			"class": "CControllerPredictiveAnomalyData",
-			"view": "predictive.anomaly.data"
+			"class": "CControllerPredictiveAnomalyData"
 		},
 		"predictive.anomaly.host": {
-			"class": "CControllerPredictiveAnomalyHost",
-			"view": "predictive.anomaly.host"
+			"class": "CControllerPredictiveAnomalyHost"
 		},
 		"predictive.anomaly.forecast": {
-			"class": "CControllerPredictiveAnomalyForecast",
-			"view": "predictive.anomaly.forecast"
+			"class": "CControllerPredictiveAnomalyForecast"
 		}
+	},
+	"assets": {
+		"css": [
+			"predictive-anomaly.css"
+		],
+		"js": [
+			"predictive-anomaly.js"
+		]
 	}
 }

@@ -8,20 +8,23 @@
 	"namespace": "PredictiveAnomaly",
 	"actions": {
 		"predictive.anomaly.view": {
-			"class": "Actions\\CControllerPredictiveAnomalyView",
+			"class": "CControllerPredictiveAnomalyView",
 			"layout": "layout.htmlpage",
 			"view": "predictive.anomaly.view"
 		},
 		"predictive.anomaly.data": {
-			"class": "Actions\\CControllerPredictiveAnomalyData",
+			"class": "CControllerPredictiveAnomalyData",
+			"view": "predictive.anomaly.view",
 			"layout": "layout.json"
 		},
 		"predictive.anomaly.host": {
-			"class": "Actions\\CControllerPredictiveAnomalyHost",
+			"class": "CControllerPredictiveAnomalyHost",
+			"view": "predictive.anomaly.view",
 			"layout": "layout.json"
 		},
 		"predictive.anomaly.forecast": {
-			"class": "Actions\\CControllerPredictiveAnomalyForecast",
+			"class": "CControllerPredictiveAnomalyForecast",
+			"view": "predictive.anomaly.view",
 			"layout": "layout.json"
 		}
 	}

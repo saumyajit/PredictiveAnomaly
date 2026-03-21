@@ -9,23 +9,19 @@
 	"actions": {
 		"predictive.anomaly.view": {
 			"class": "CControllerPredictiveAnomalyView",
-			"layout": "layout.htmlpage",
 			"view": "predictive.anomaly.view"
 		},
 		"predictive.anomaly.data": {
 			"class": "CControllerPredictiveAnomalyData",
-			"view": "predictive.anomaly.view",
-			"layout": "layout.json"
+			"view": "predictive.anomaly.data"
 		},
 		"predictive.anomaly.host": {
 			"class": "CControllerPredictiveAnomalyHost",
-			"view": "predictive.anomaly.view",
-			"layout": "layout.json"
+			"view": "predictive.anomaly.host"
 		},
 		"predictive.anomaly.forecast": {
 			"class": "CControllerPredictiveAnomalyForecast",
-			"view": "predictive.anomaly.view",
-			"layout": "layout.json"
+			"view": "predictive.anomaly.forecast"
 		}
 	}
 }

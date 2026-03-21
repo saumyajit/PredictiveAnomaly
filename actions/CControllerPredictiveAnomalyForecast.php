@@ -18,7 +18,7 @@ use Modules\PredictiveAnomaly\Services\CMLBridge;
 
 class CControllerPredictiveAnomalyForecast extends CController {
 
-	public function init(): void {
+	protected function init(): void {
 		$this->disableCsrfValidation();
 	}
 
@@ -36,7 +36,7 @@ class CControllerPredictiveAnomalyForecast extends CController {
 	}
 
 	protected function checkPermissions(): bool {
-		return true;
+		return $this->getUserType() >= USER_TYPE_ZABBIX_USER;
 	}
 
 	protected function doAction(): void {

@@ -37,7 +37,7 @@ class CControllerPredictiveAnomalyView extends CController {
 		'sort_order'      => 'DESC',
 	];
 
-	public function init(): void {
+	protected function init(): void {
 		// Page controller — CSRF validation on filter form submit is handled
 		// by Zabbix core. No need to disable it here.
 	}
@@ -67,7 +67,7 @@ class CControllerPredictiveAnomalyView extends CController {
 	}
 
 	protected function checkPermissions(): bool {
-		return true;
+		return $this->getUserType() >= USER_TYPE_ZABBIX_USER;
 	}
 
 	protected function doAction(): void {

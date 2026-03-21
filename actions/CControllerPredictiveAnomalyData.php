@@ -29,7 +29,7 @@ class CControllerPredictiveAnomalyData extends CController {
 
 	const PAGE_SIZE = 50;
 
-	public function init(): void {
+	protected function init(): void {
 		$this->disableCsrfValidation();
 	}
 
@@ -52,7 +52,7 @@ class CControllerPredictiveAnomalyData extends CController {
 	}
 
 	protected function checkPermissions(): bool {
-		return true;
+		return $this->getUserType() >= USER_TYPE_ZABBIX_USER;
 	}
 
 	protected function doAction(): void {

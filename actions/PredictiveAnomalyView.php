@@ -14,7 +14,7 @@ use Exception;
  * Controller responsável por exibir a página principal do módulo
  * Controller responsible for displaying the main module page
  */
-class PredictiveAnomalyView extends CController
+class ControllerPredictiveAnomalyView extends CController
 {
     /**
      * Inicialização do controller

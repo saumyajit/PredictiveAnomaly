@@ -263,3 +263,59 @@
 /* Light theme table borders */
 #pad-root[data-theme="light"] .pad-table td { border-bottom-color:var(--pad-border); }
 #pad-root[data-theme="light"] .pad-ex-item  { border-bottom-color:var(--pad-border); }
+
+/* ── Dynamic severity chips ─────────────────────────────────────────────── */
+.pad-chip--sev-0  { --sev-color: #97aab3; }
+.pad-chip--sev-1  { --sev-color: #7499ff; }
+.pad-chip--sev-2  { --sev-color: #ffc859; }
+.pad-chip--sev-3  { --sev-color: #ffa059; }
+.pad-chip--sev-4  { --sev-color: #e97659; }
+.pad-chip--sev-5  { --sev-color: #e45959; }
+[class*="pad-chip--sev-"].active {
+  background: color-mix(in srgb, var(--sev-color) 15%, transparent);
+  border-color: color-mix(in srgb, var(--sev-color) 60%, transparent);
+  color: var(--sev-color);
+}
+
+/* ── Drilldown multi-chart grid ─────────────────────────────────────────── */
+.pad-drawer-charts { margin-bottom: 14px; }
+
+/* ── Maintenance window card improvements ───────────────────────────────── */
+.pad-mw-card {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--pad-bg-input); border: 1px solid var(--pad-border);
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+}
+.pad-mw-card:last-child { margin-bottom: 0; }
+.pad-mw-sev    { width: 3px; align-self: stretch; border-radius: 2px; flex-shrink: 0; }
+.pad-mw-countdown { display:flex; flex-direction:column; align-items:center; gap:1px; flex-shrink:0; width:44px; }
+.pad-mw-days   { font-family:'IBM Plex Mono',monospace; font-size:20px; font-weight:600; line-height:1; }
+.pad-mw-dlabel { font-size:9px; color:var(--pad-text-3); font-family:'IBM Plex Mono',monospace; }
+.pad-mw-body   { flex:1; min-width:0; }
+.pad-mw-title  { font-size:12px; color:var(--pad-text-1); font-weight:500; }
+.pad-mw-sub    { font-size:10px; color:var(--pad-text-3); margin-top:3px; line-height:1.5; }
+
+/* ── Config info box in ML Models tab ───────────────────────────────────── */
+.pad-config-info {
+  margin-top: 16px; background: var(--pad-bg-input);
+  border: 1px solid var(--pad-border); border-radius: 8px; padding: 12px 16px;
+}
+.pad-config-info__title { font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--pad-text-2); margin-bottom:10px; }
+.pad-config-info__row   { display:flex; gap:12px; align-items:baseline; padding:4px 0; border-top:1px solid var(--pad-border); }
+.pad-config-info__row code { font-family:'IBM Plex Mono',monospace; font-size:11px; color:#60a5fa; white-space:nowrap; }
+.pad-config-info__row span { font-size:11px; color:var(--pad-text-3); }
+
+/* ── Exhaustion item layout fix ─────────────────────────────────────────── */
+.pad-ex-item { display:grid; grid-template-columns:160px 1fr auto; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid rgba(31,45,69,.3); }
+.pad-ex-item:last-child { border-bottom:none; }
+.pad-ex-host   { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--pad-text-1); font-weight:500; }
+.pad-ex-meta   { font-size:10px; color:var(--pad-text-3); margin-top:1px; }
+.pad-ex-resource { font-size:10px; color:var(--pad-text-2); margin-top:3px; }
+.pad-ex-track  { height:8px; background:var(--pad-bg-input); border-radius:4px; overflow:hidden; }
+.pad-ex-fill   { height:100%; border-radius:4px; transition:width .4s; }
+.pad-ex-labels { display:flex; justify-content:space-between; font-size:9px; color:var(--pad-text-3); margin-top:3px; font-family:'IBM Plex Mono',monospace; }
+.pad-ex-eta    { font-family:'IBM Plex Mono',monospace; font-size:12px; text-align:right; white-space:nowrap; }
+
+/* ── Misc improvements ──────────────────────────────────────────────────── */
+.pad-refresh-wrap { display:flex; align-items:center; gap:4px; }
+.pad-drawer__esc-hint { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--pad-text-3); margin-right:4px; }

@@ -11,6 +11,7 @@ use CController;
 use API;
 use Modules\PredictiveAnomaly\services\CAnomalyEngine;
 use Modules\PredictiveAnomaly\services\CMLBridge;
+use Modules\PredictiveAnomaly\services\MetricConfig;
 
 class CControllerPredictiveAnomalyForecast extends CController {
 
@@ -31,6 +32,7 @@ class CControllerPredictiveAnomalyForecast extends CController {
 			'itemid'     => 'required|id',
 			'time_range' => 'in 1h,6h,24h,7d,30d',
 			'model'      => 'in all,zscore,linear,arima,prophet',
+			'metric'     => 'string',
 		];
 		$ret = $this->validateInput($fields);
 		if (!$ret) {
@@ -48,6 +50,7 @@ class CControllerPredictiveAnomalyForecast extends CController {
 		$itemid     = $this->getInput('itemid');
 		$time_range = $this->getInput('time_range', '24h');
 		$model      = $this->getInput('model', 'all');
+		$metric_slug = $this->getInput('metric', 'disk');
 
 		$time_map   = ['1h'=>3600,'6h'=>21600,'24h'=>86400,'7d'=>604800,'30d'=>2592000];
 		$time_from  = time() - ($time_map[$time_range] ?? 86400);
@@ -112,7 +115,7 @@ class CControllerPredictiveAnomalyForecast extends CController {
 		$ml     = new CMLBridge();
 
 		$z  = $engine->zScoreAnomalyScore($values);
-		$lr = $engine->linearRegressionForecast($clocks, $values, $time_range);
+		$lr = $engine->linearRegressionForecast($clocks, $values, $time_range, $metric_slug);
 
 		$ml_result = null;
 		if (in_array($model, ['all', 'arima', 'prophet']) && $ml->isAvailable()) {

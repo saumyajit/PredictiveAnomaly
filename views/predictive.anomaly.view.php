@@ -1,13 +1,13 @@
 <?php
 /**
  * View: predictive.anomaly.view
- * Receives $data from CControllerPredictiveAnomalyView.
  */
-
-$filter = $data['filter'];
+$filter          = $data['filter'];
+$metric_defs     = $data['metric_defs']     ?? [];
+$severity_levels = $data['severity_levels'] ?? [];
 ?>
 
-<!-- Chart.js — required for Forecasts tab -->
+<!-- Chart.js — required for Forecasts tab and drilldown charts -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
 <div id="pad-root" data-theme="dark">
@@ -44,30 +44,30 @@ $filter = $data['filter'];
         </div>
       </div>
 
-      <!-- Metrics — checkboxes control form submit; JS toggles active class + checked state -->
+      <!-- Metrics — Q3: driven by config/metrics.php -->
       <div class="pad-filter-field">
         <label class="pad-flabel"><?= _('Metrics') ?></label>
-        <div class="pad-chip-group" id="pad-metric-chips">
-          <?php foreach (['cpu'=>'CPU','memory'=>'Memory','disk'=>'Disk','network'=>'Network','iops'=>'IOPS','load'=>'Load'] as $k=>$l): ?>
-          <label class="pad-chip <?= in_array($k,$filter['metrics'])?'active':'' ?>"
-                 data-metric="<?= $k ?>">
-            <input type="checkbox" name="metrics[]" value="<?= $k ?>"
-                   <?= in_array($k,$filter['metrics'])?'checked':'' ?> hidden/>
-            <?= $l ?>
+        <div class="pad-chip-group">
+          <?php foreach ($metric_defs as $slug => $def): ?>
+          <label class="pad-chip <?= in_array($slug, $filter['metrics']) ? 'active' : '' ?>">
+            <input type="checkbox" name="metrics[]" value="<?= $slug ?>"
+                   <?= in_array($slug, $filter['metrics']) ? 'checked' : '' ?> hidden/>
+            <?= htmlspecialchars($def['icon'] . ' ' . $def['label']) ?>
           </label>
           <?php endforeach; ?>
         </div>
       </div>
 
-      <!-- Severity -->
+      <!-- Severity — Q2: driven by Zabbix severity constants -->
       <div class="pad-filter-field">
         <label class="pad-flabel"><?= _('Severity') ?></label>
         <div class="pad-chip-group">
-          <?php foreach ([3=>['Critical','sev-crit'],2=>['Warning','sev-warn'],1=>['Info','sev-info']] as $id=>[$n,$c]): ?>
-          <label class="pad-chip <?= $c ?> <?= in_array($id,$filter['severities'])?'active':'' ?>">
-            <input type="checkbox" name="severities[]" value="<?= $id ?>"
-                   <?= in_array($id,$filter['severities'])?'checked':'' ?> hidden/>
-            <?= $n ?>
+          <?php foreach (array_reverse($severity_levels, true) as $sev_id => $sev): ?>
+          <label class="pad-chip pad-chip--sev-<?= $sev_id ?> <?= in_array($sev_id, $filter['severities']) ? 'active' : '' ?>"
+                 style="--sev-color:<?= $sev['color'] ?>">
+            <input type="checkbox" name="severities[]" value="<?= $sev_id ?>"
+                   <?= in_array($sev_id, $filter['severities']) ? 'checked' : '' ?> hidden/>
+            <?= htmlspecialchars($sev['label']) ?>
           </label>
           <?php endforeach; ?>
         </div>
@@ -78,16 +78,16 @@ $filter = $data['filter'];
         <label class="pad-flabel"><?= _('Time Range') ?></label>
         <div class="pad-radio-group">
           <?php foreach (['1h','6h','24h','7d','30d'] as $tr): ?>
-          <label class="pad-radio <?= $filter['time_range']===$tr?'active':'' ?>">
+          <label class="pad-radio <?= $filter['time_range'] === $tr ? 'active' : '' ?>">
             <input type="radio" name="time_range" value="<?= $tr ?>"
-                   <?= $filter['time_range']===$tr?'checked':'' ?> hidden/>
+                   <?= $filter['time_range'] === $tr ? 'checked' : '' ?> hidden/>
             <?= $tr ?>
           </label>
           <?php endforeach; ?>
         </div>
       </div>
 
-      <!-- Min Score -->
+      <!-- Min Score — Q4: minimum anomaly score threshold -->
       <div class="pad-filter-field pad-filter-field--narrow">
         <label class="pad-flabel"><?= _('Min Score') ?></label>
         <div class="pad-range-wrap">
@@ -104,8 +104,8 @@ $filter = $data['filter'];
       <div class="pad-filter-field">
         <label class="pad-flabel"><?= _('Model') ?></label>
         <select name="model" class="pad-select">
-          <?php foreach (['all'=>'All Models','zscore'=>'Z-Score','linear'=>'Linear Reg','arima'=>'ARIMA','prophet'=>'Prophet'] as $v=>$l): ?>
-          <option value="<?= $v ?>" <?= $filter['model']===$v?'selected':'' ?>><?= $l ?></option>
+          <?php foreach (['all'=>'All Models','zscore'=>'Z-Score','linear'=>'Linear Reg'] as $v=>$l): ?>
+          <option value="<?= $v ?>" <?= $filter['model'] === $v ? 'selected' : '' ?>><?= $l ?></option>
           <?php endforeach; ?>
         </select>
       </div>
@@ -177,24 +177,20 @@ $filter = $data['filter'];
   </div>
   <div class="pad-toolbar-right">
     <button class="pad-btn pad-btn--sm" id="pad-export-csv">⬇ CSV</button>
-
-    <!-- Auto-refresh control — FIX #8 -->
     <div class="pad-refresh-wrap">
-      <select id="pad-refresh-select" class="pad-select pad-select--sm" title="<?= _('Auto-refresh interval') ?>">
+      <select id="pad-refresh-select" class="pad-select pad-select--sm" title="Auto-refresh interval">
         <option value="0"><?= _('No refresh') ?></option>
         <option value="30">30s</option>
-        <option value="60" selected>1m</option>
+        <option value="60">1m</option>
         <option value="120">2m</option>
         <option value="300">5m</option>
-        <option value="600">10m</option>
       </select>
       <button class="pad-btn pad-btn--sm pad-btn--primary" id="pad-refresh-btn">⟳ <?= _('Refresh') ?></button>
     </div>
-
     <button class="pad-btn pad-btn--sm" id="pad-theme-btn">🌗</button>
     <span class="pad-live-indicator">
       <span class="pad-live-dot" id="pad-live-dot"></span>
-      <span id="pad-live-label">LIVE</span>
+      <span id="pad-live-label">MANUAL</span>
     </span>
   </div>
 </div>
@@ -261,9 +257,7 @@ $filter = $data['filter'];
       <div class="pad-card__actions"><span class="pad-tag pad-tag--zscore">Z-Score</span></div>
     </div>
     <div class="pad-card__body">
-      <div id="pad-heatmap-wrap">
-        <div class="pad-spinner-wrap"><div class="pad-spinner"></div></div>
-      </div>
+      <div id="pad-heatmap-wrap"><div class="pad-spinner-wrap"><div class="pad-spinner"></div></div></div>
       <div class="pad-hm-legend">
         <span><?= _('Low') ?></span>
         <div class="pad-hm-scale" id="pad-hm-scale"></div>
@@ -281,11 +275,11 @@ $filter = $data['filter'];
       <div class="pad-card__head">
         <div class="pad-card__title">📉 <?= _('Resource Exhaustion Estimates') ?></div>
         <div class="pad-card__actions">
-          <span class="pad-tag pad-tag--native">Zabbix Trends</span>
+          <span class="pad-tag pad-tag--native">Linear Regression</span>
           <select id="pad-ex-metric" class="pad-select pad-select--sm">
-            <option value="disk"><?= _('Disk') ?></option>
-            <option value="memory"><?= _('Memory') ?></option>
-            <option value="cpu"><?= _('CPU') ?></option>
+            <?php foreach ($metric_defs as $slug => $def): ?>
+            <option value="<?= $slug ?>"><?= htmlspecialchars($def['icon'].' '.$def['label']) ?></option>
+            <?php endforeach; ?>
           </select>
         </div>
       </div>
@@ -293,9 +287,14 @@ $filter = $data['filter'];
         <div class="pad-spinner-wrap"><div class="pad-spinner"></div></div>
       </div>
     </div>
+
+    <!-- Q6: Real maintenance windows from breach ETA -->
     <div class="pad-card">
       <div class="pad-card__head">
         <div class="pad-card__title">🗓 <?= _('Predicted Maintenance Windows') ?></div>
+        <div class="pad-card__actions">
+          <span class="pad-tag pad-tag--native">Breach ETA + Lead Time</span>
+        </div>
       </div>
       <div class="pad-card__body" id="pad-mw-body">
         <div class="pad-spinner-wrap"><div class="pad-spinner"></div></div>
@@ -306,7 +305,7 @@ $filter = $data['filter'];
 
 <!-- ═══ TAB: FORECASTS ═══ -->
 <div class="pad-tab-panel" id="tab-forecasts">
-  <div class="pad-grid pad-grid--2">
+  <div class="pad-grid pad-grid--2" id="pad-fleet-charts">
     <div class="pad-card">
       <div class="pad-card__head">
         <div class="pad-card__title">⚡ <?= _('Fleet CPU — Avg + Forecast') ?></div>
@@ -319,7 +318,7 @@ $filter = $data['filter'];
     <div class="pad-card">
       <div class="pad-card__head">
         <div class="pad-card__title">🧠 <?= _('Fleet Memory — Avg + Forecast') ?></div>
-        <div class="pad-card__actions"><span class="pad-tag pad-tag--arima">ARIMA</span></div>
+        <div class="pad-card__actions"><span class="pad-tag pad-tag--native">Native</span></div>
       </div>
       <div class="pad-card__body">
         <div class="pad-chart-wrap" style="height:220px"><canvas id="chart-fleet-mem"></canvas></div>
@@ -360,7 +359,6 @@ $filter = $data['filter'];
         <div class="pad-drawer__sub"   id="pad-drawer-sub">—</div>
       </div>
       <div class="pad-drawer__actions">
-        <span class="pad-tag pad-tag--zscore">Drilldown</span>
         <span class="pad-drawer__esc-hint">ESC to close</span>
         <button class="pad-drawer__close" id="pad-drawer-close">✕</button>
       </div>
@@ -371,10 +369,8 @@ $filter = $data['filter'];
   </div>
 </div>
 
-<!-- HEATMAP TOOLTIP -->
 <div class="pad-hm-tooltip" id="pad-hm-tooltip"></div>
 
-<!-- PASS PHP STATE TO JS -->
 <script>
 window.PAD_CONFIG = <?= json_encode([
 	'action_data'     => 'predictive.anomaly.data',
@@ -384,11 +380,16 @@ window.PAD_CONFIG = <?= json_encode([
 	'total_hosts'     => $data['total_hosts'],
 	'time_from'       => $data['time_from'],
 	'time_till'       => $data['time_till'],
+	// Q3: metric definitions for JS (labels, icons, units)
+	'metric_defs'     => array_map(fn($m) => [
+		'label' => $m['label'],
+		'icon'  => $m['icon'],
+		'unit'  => $m['unit'],
+	], $metric_defs),
 	'strings' => [
-		'loading'    => _('Loading…'),
-		'no_data'    => _('No anomalies found for current filters.'),
-		'drilldown'  => _('Drilldown →'),
-		'page_of'    => _('Page %d of %d'),
+		'loading'   => _('Loading…'),
+		'no_data'   => _('No anomalies found for current filters.'),
+		'drilldown' => _('Drilldown →'),
 	],
 ]) ?>;
 </script>

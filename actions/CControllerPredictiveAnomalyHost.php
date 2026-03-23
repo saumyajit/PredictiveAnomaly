@@ -11,6 +11,7 @@ use CController;
 use API;
 use Modules\PredictiveAnomaly\services\CAnomalyEngine;
 use Modules\PredictiveAnomaly\services\CMLBridge;
+use Modules\PredictiveAnomaly\services\MetricConfig;
 
 class CControllerPredictiveAnomalyHost extends CController {
 
@@ -170,7 +171,7 @@ class CControllerPredictiveAnomalyHost extends CController {
 				$clocks = array_column($vals, 'clock');
 
 				$z  = $engine->zScoreAnomalyScore($values);
-				$lr = $engine->linearRegressionForecast($clocks, $values, $time_range);
+				$lr = $engine->linearRegressionForecast($clocks, $values, $time_range, $slug ?? 'disk');
 
 				$ml_result = null;
 				if (in_array($model, ['all', 'arima', 'prophet']) && $ml->isAvailable()) {

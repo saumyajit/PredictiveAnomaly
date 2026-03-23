@@ -27,7 +27,15 @@ const qs  = (s, c=document) => c.querySelector(s);
 const qsa = (s, c=document) => [...c.querySelectorAll(s)];
 function el(tag, cls, html) { const e=document.createElement(tag); if(cls) e.className=cls; if(html!==undefined) e.innerHTML=html; return e; }
 function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function scoreColor(v) { return v<0.2?'#10b981':v<0.4?'#06b6d4':v<0.55?'#f59e0b':v<0.75?'#f97316':'#ef4444'; }
+function scoreColor(v) {
+	const crit = CFG.critical_threshold || 0.75;
+	const warn  = CFG.warning_threshold  || 0.50;
+	if (v >= crit)        return '#ef4444';  // Critical — red
+	if (v >= warn)        return '#f97316';  // Warning  — orange
+	if (v >= warn * 0.6)  return '#f59e0b';  // Elevated — yellow
+	if (v >= 0.2)         return '#06b6d4';  // Low      — cyan
+	return '#10b981';                         // OK       — green
+}
 function usageColor(p) { return p>=85?'#ef4444':p>=70?'#f59e0b':'#10b981'; }
 function fmtDays(d) { return d===0?'TODAY':d===1?'Tomorrow':`${d} days`; }
 
@@ -460,15 +468,31 @@ function renderExhaustion(){
 // ── ML MODELS ─────────────────────────────────────────────────────────────
 function renderModels(){
 	const body=qs('#pad-model-body');if(!body)return;body.innerHTML='';
+	// Check ML sidecar status via a quick ping
+	const mlStatus = {dot:'idle', acc:'—', cls:'lo', info:'Not running · Start: python3 ml_sidecar.py'};
+	fetch('http://127.0.0.1:5001/health', {signal: AbortSignal.timeout(1000)})
+		.then(r => r.json())
+		.then(d => {
+			const mlRow = qs('#pad-ml-sidecar-row');
+			if (!mlRow) return;
+			const dot = mlRow.querySelector('.pad-model-dot');
+			const info = mlRow.querySelector('.pad-model-info');
+			const acc  = mlRow.querySelector('.pad-model-acc');
+			if (dot)  { dot.className='pad-model-dot pad-model-dot--on'; }
+			if (info) { info.textContent = `✅ Connected · Prophet:${d.prophet?'Yes':'No'} · ARIMA:${d.arima?'Yes':'No'} · Cache:${d.cached||0} items`; }
+			if (acc)  { acc.textContent='LIVE'; acc.className='pad-model-acc pad-model-acc--hi'; }
+		})
+		.catch(() => {}); // sidecar not running — row already shows idle state
+
 	const models=[
-		{dot:'on',  name:'Zabbix Native Trends · Linear Regression',info:`${CFG.total_hosts.toLocaleString()} hosts · All metrics · Primary engine`,acc:'93.4%',cls:'hi'},
-		{dot:'on',  name:'Z-Score Anomaly Detection · Rolling σ',   info:`Sensitivity: configurable via config/thresholds.php`,acc:'97.1%',cls:'hi'},
-		{dot:'idle',name:'ARIMA / Prophet (ML Sidecar)',             info:'Requires python3 ml_sidecar.py running on Zabbix server · pip install flask prophet statsmodels',acc:'—',cls:'lo'},
+		{dot:'on',  name:'Zabbix Native Trends · Linear Regression',info:`${CFG.total_hosts.toLocaleString()} hosts · All enabled metrics · Primary engine`,acc:'93.4%',cls:'hi'},
+		{dot:'on',  name:'Z-Score Anomaly Detection · Rolling σ',   info:'Configurable via config/thresholds.php · z_score_threshold, window_fraction',acc:'97.1%',cls:'hi'},
+		{dot:'idle',name:'ARIMA / Prophet (ML Sidecar)',             id:'pad-ml-sidecar-row', info:'Not running · Start: python3 ml_sidecar.py on this server',acc:'—',cls:'lo'},
 	];
 	const list=el('div','pad-model-list');
 	models.forEach(m=>{
 		const row=el('div','pad-model-row');
-		row.innerHTML=`<div class="pad-model-dot pad-model-dot--${m.dot}"></div><div class="pad-model-name">${m.name}</div><div class="pad-model-info">${m.info}</div><span class="pad-model-acc pad-model-acc--${m.cls}">${m.acc}</span>`;
+		row.id = m.id || ''; row.innerHTML=`<div class="pad-model-dot pad-model-dot--${m.dot}"></div><div class="pad-model-name">${m.name}</div><div class="pad-model-info">${m.info}</div><span class="pad-model-acc pad-model-acc--${m.cls}">${m.acc}</span>`;
 		list.appendChild(row);
 	});
 

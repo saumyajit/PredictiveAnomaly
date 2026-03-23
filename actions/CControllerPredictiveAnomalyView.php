@@ -24,6 +24,8 @@ class CControllerPredictiveAnomalyView extends CController {
 		'sort_field'      => 'score',
 		'sort_order'      => 'DESC',
 		'page'            => 1,
+		'critical_threshold' => '0.75',
+		'warning_threshold'  => '0.50',
 	];
 
 	protected function init(): void {
@@ -43,7 +45,9 @@ class CControllerPredictiveAnomalyView extends CController {
 			'sort_order'      => 'in ASC,DESC',
 			'page'            => 'ge 1',
 			'filter_set'      => 'in 1',
-			'filter_rst'      => 'in 1',
+			'filter_rst'           => 'in 1',
+			'critical_threshold'  => 'string',
+			'warning_threshold'   => 'string',
 		];
 		$ret = $this->validateInput($fields);
 		if (!$ret) $this->setResponse(new CControllerResponseFatal());

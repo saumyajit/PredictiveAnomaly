@@ -319,3 +319,16 @@
 /* ── Misc improvements ──────────────────────────────────────────────────── */
 .pad-refresh-wrap { display:flex; align-items:center; gap:4px; }
 .pad-drawer__esc-hint { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--pad-text-3); margin-right:4px; }
+
+/* ── Severity threshold inputs ──────────────────────────────────────────── */
+.pad-sev-wrap       { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+.pad-sev-threshold  { display:flex; align-items:center; gap:3px; }
+.pad-sev-label      { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--pad-text-3); }
+.pad-threshold-input {
+  width:48px; background:var(--pad-bg-input); border:1px solid var(--pad-border);
+  border-radius:4px; padding:3px 5px; color:var(--pad-text-1); font-size:11px;
+  font-family:'IBM Plex Mono',monospace; outline:none; text-align:center;
+}
+.pad-threshold-input:focus { border-color:#2563eb; }
+.pad-chip.sev-crit.active { background:rgba(239,68,68,.12); border-color:rgba(239,68,68,.5); color:#f87171; }
+.pad-chip.sev-warn.active { background:rgba(249,115,22,.12); border-color:rgba(249,115,22,.5); color:#fb923c; }

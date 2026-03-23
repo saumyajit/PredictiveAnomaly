@@ -58,18 +58,34 @@ $severity_levels = $data['severity_levels'] ?? [];
         </div>
       </div>
 
-      <!-- Severity — Q2: driven by Zabbix severity constants -->
+      <!-- Severity — simple chips + configurable score thresholds -->
       <div class="pad-filter-field">
-        <label class="pad-flabel"><?= _('Severity') ?></label>
-        <div class="pad-chip-group">
-          <?php foreach (array_reverse($severity_levels, true) as $sev_id => $sev): ?>
-          <label class="pad-chip pad-chip--sev-<?= $sev_id ?> <?= in_array($sev_id, $filter['severities']) ? 'active' : '' ?>"
-                 style="--sev-color:<?= $sev['color'] ?>">
-            <input type="checkbox" name="severities[]" value="<?= $sev_id ?>"
-                   <?= in_array($sev_id, $filter['severities']) ? 'checked' : '' ?> hidden/>
-            <?= htmlspecialchars($sev['label']) ?>
+        <label class="pad-flabel"><?= _('Severity Thresholds') ?></label>
+        <div class="pad-sev-wrap">
+          <label class="pad-chip sev-crit <?= in_array(3, $filter['severities']) ? 'active' : '' ?>">
+            <input type="checkbox" name="severities[]" value="3"
+                   <?= in_array(3, $filter['severities']) ? 'checked' : '' ?> hidden/>
+            🔴 Critical
           </label>
-          <?php endforeach; ?>
+          <div class="pad-sev-threshold">
+            <span class="pad-sev-label">&gt;</span>
+            <input type="number" name="critical_threshold" id="pad-crit-threshold"
+                   class="pad-threshold-input" min="0" max="1" step="0.05"
+                   value="<?= htmlspecialchars($filter['critical_threshold'] ?? '0.75') ?>"
+                   title="Anomaly score above which hosts are Critical"/>
+          </div>
+          <label class="pad-chip sev-warn <?= in_array(2, $filter['severities']) ? 'active' : '' ?>" style="margin-left:8px">
+            <input type="checkbox" name="severities[]" value="2"
+                   <?= in_array(2, $filter['severities']) ? 'checked' : '' ?> hidden/>
+            🟡 Warning
+          </label>
+          <div class="pad-sev-threshold">
+            <span class="pad-sev-label">&gt;</span>
+            <input type="number" name="warning_threshold" id="pad-warn-threshold"
+                   class="pad-threshold-input" min="0" max="1" step="0.05"
+                   value="<?= htmlspecialchars($filter['warning_threshold'] ?? '0.50') ?>"
+                   title="Anomaly score above which hosts are Warning"/>
+          </div>
         </div>
       </div>
 
@@ -386,6 +402,8 @@ window.PAD_CONFIG = <?= json_encode([
 		'icon'  => $m['icon'],
 		'unit'  => $m['unit'],
 	], $metric_defs),
+	'critical_threshold' => (float)($filter['critical_threshold'] ?? 0.75),
+	'warning_threshold'  => (float)($filter['warning_threshold']  ?? 0.50),
 	'strings' => [
 		'loading'   => _('Loading…'),
 		'no_data'   => _('No anomalies found for current filters.'),

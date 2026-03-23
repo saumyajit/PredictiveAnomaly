@@ -170,10 +170,17 @@ class CControllerPredictiveAnomalyData extends CController {
 		$counted       = [];
 
 		foreach ($metric_keys as $slug => $key_patterns) {
+			// Search ALL key patterns for this metric (OR logic)
+			// Needed because different templates use different key names
+			// e.g. memory: vm.memory.utilization vs vm.memory.size[pavailable]
+			$search_patterns = array_map(
+				fn($p) => explode('[', $p)[0],  // strip [params] for prefix search
+				$key_patterns
+			);
 			$items = API::Item()->get([
 				'output'       => ['itemid', 'hostid', 'name', 'key_', 'value_type', 'units'],
 				'hostids'      => $hostids,
-				'search'       => ['key_' => $key_patterns[0]],
+				'search'       => ['key_' => $search_patterns],
 				'searchByAny'  => true,
 				'filter'       => ['value_type' => [ITEM_VALUE_TYPE_FLOAT, ITEM_VALUE_TYPE_UINT64]],
 				'monitored'    => true,

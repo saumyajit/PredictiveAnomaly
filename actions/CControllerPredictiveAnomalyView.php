@@ -1,20 +1,13 @@
 <?php
-/**
- * Action: predictive.anomaly.view
- *
- * Main page controller. Validates and persists filter state via CProfile.
- * Fetches lightweight group metadata for the sidebar.
- * All heavy data (anomaly scoring) is loaded async via JSON actions.
- */
-
 namespace Modules\PredictiveAnomaly\actions;
 
 use CController;
 use CControllerResponseData;
 use CControllerResponseFatal;
 use CProfile;
-use API;
 use CSettingsHelper;
+use API;
+use Modules\PredictiveAnomaly\services\MetricConfig;
 
 class CControllerPredictiveAnomalyView extends CController {
 
@@ -23,7 +16,7 @@ class CControllerPredictiveAnomalyView extends CController {
 	const FILTER_DEFAULTS = [
 		'groupids'        => [],
 		'metrics'         => ['cpu', 'memory', 'disk'],
-		'severities'      => [2, 3],
+		'severities'      => [3, 2],       // High + Average by default
 		'time_range'      => '24h',
 		'score_threshold' => '0.2',
 		'model'           => 'all',
@@ -31,10 +24,11 @@ class CControllerPredictiveAnomalyView extends CController {
 		'sort_field'      => 'score',
 		'sort_order'      => 'DESC',
 		'page'            => 1,
+		'critical_threshold' => '0.75',
+		'warning_threshold'  => '0.50',
 	];
 
 	protected function init(): void {
-		// HTML page — disableCsrfValidation required even for page controllers
 		$this->disableCsrfValidation();
 	}
 
@@ -51,13 +45,12 @@ class CControllerPredictiveAnomalyView extends CController {
 			'sort_order'      => 'in ASC,DESC',
 			'page'            => 'ge 1',
 			'filter_set'      => 'in 1',
-			'filter_rst'      => 'in 1',
+			'filter_rst'           => 'in 1',
+			'critical_threshold'  => 'string',
+			'warning_threshold'   => 'string',
 		];
-
 		$ret = $this->validateInput($fields);
-		if (!$ret) {
-			$this->setResponse(new CControllerResponseFatal());
-		}
+		if (!$ret) $this->setResponse(new CControllerResponseFatal());
 		return $ret;
 	}
 
@@ -75,61 +68,75 @@ class CControllerPredictiveAnomalyView extends CController {
 		} elseif ($this->hasInput('filter_set')) {
 			$filter = [];
 			foreach (self::FILTER_DEFAULTS as $key => $default) {
-				$value = $this->hasInput($key) ? $this->getInput($key, $default) : $default;
+				$value        = $this->hasInput($key) ? $this->getInput($key, $default) : $default;
 				$filter[$key] = $value;
 				CProfile::update(self::PROFILE_KEY . '.' . $key, json_encode($value), PROFILE_TYPE_STR);
 			}
 		} else {
 			$filter = [];
 			foreach (self::FILTER_DEFAULTS as $key => $default) {
-				$stored = CProfile::get(self::PROFILE_KEY . '.' . $key);
+				$stored       = CProfile::get(self::PROFILE_KEY . '.' . $key);
 				$filter[$key] = ($stored !== null) ? json_decode($stored, true) : $default;
 			}
 		}
 
 		// ── All host groups for sidebar ───────────────────────────────────
 		$all_groups = API::HostGroup()->get([
-			'output'         => ['groupid', 'name'],
-			'with_hosts'     => true,
-			'preservekeys'   => true,
-			'sortfield'      => 'name',
-			'sortorder'      => 'ASC',
+			'output'       => ['groupid', 'name'],
+			'with_hosts'   => true,
+			'preservekeys' => true,
+			'sortfield'    => 'name',
+			'sortorder'    => 'ASC',
 		]);
 
 		foreach ($all_groups as &$group) {
-			$group['host_count'] = API::Host()->get([
-				'countOutput' => true,
-				'groupids'    => [$group['groupid']],
+			$group['host_count'] = (int) API::Host()->get([
+				'countOutput'     => true,
+				'groupids'        => [$group['groupid']],
 				'monitored_hosts' => true,
 			]);
 		}
 		unset($group);
 
-		// ── Total hosts for summary band ──────────────────────────────────
+		// ── Total hosts ───────────────────────────────────────────────────
 		$total_hosts = (int) API::Host()->get([
 			'countOutput'     => true,
 			'monitored_hosts' => true,
 		]);
+
+		// ── Q2: Severity levels from Zabbix API ───────────────────────────
+		// Zabbix severity constants: 0=Not classified, 1=Info, 2=Warning,
+		// 3=Average, 4=High, 5=Disaster
+		$severity_levels = [
+			0 => ['label' => _('Not classified'), 'color' => '#97aab3'],
+			1 => ['label' => _('Information'),    'color' => '#7499ff'],
+			2 => ['label' => _('Warning'),        'color' => '#ffc859'],
+			3 => ['label' => _('Average'),        'color' => '#ffa059'],
+			4 => ['label' => _('High'),           'color' => '#e97659'],
+			5 => ['label' => _('Disaster'),       'color' => '#e45959'],
+		];
+
+		// ── Q3: Metrics from config file ──────────────────────────────────
+		$metric_defs = MetricConfig::enabled();
 
 		// ── Time boundaries ───────────────────────────────────────────────
 		$time_map  = ['1h'=>3600,'6h'=>21600,'24h'=>86400,'7d'=>604800,'30d'=>2592000];
 		$time_from = time() - ($time_map[$filter['time_range']] ?? 86400);
 		$time_till = time();
 
-		// ── Add keys expected by other modules' layout.htmlpage.php ────────────
-		// IncidentInvestigation / WorkflowOps layout.htmlpage.php expects these
-		// $data keys. We provide safe defaults so their layout doesn't throw
-		// "Trying to access array offset on int" warnings.
+		// ── Layout keys expected by other modules' layout.htmlpage.php ────
 		$server_check_interval = CSettingsHelper::get(CSettingsHelper::SERVER_CHECK_INTERVAL);
 
 		$this->setResponse(new CControllerResponseData([
-			'filter'      => $filter,
-			'all_groups'  => array_values($all_groups),
-			'total_hosts' => $total_hosts,
-			'time_from'   => $time_from,
-			'time_till'   => $time_till,
-			'title'       => _('Predictive Anomaly Dashboard'),
-			// Standard layout.htmlpage keys — prevent warnings from other modules' layouts
+			'filter'           => $filter,
+			'all_groups'       => array_values($all_groups),
+			'total_hosts'      => $total_hosts,
+			'time_from'        => $time_from,
+			'time_till'        => $time_till,
+			'title'            => _('Predictive Anomaly Dashboard'),
+			'metric_defs'      => $metric_defs,
+			'severity_levels'  => $severity_levels,
+			// Layout keys
 			'page'             => ['title' => _('Predictive Anomaly Dashboard')],
 			'javascript'       => ['files' => []],
 			'stylesheet'       => ['files' => []],

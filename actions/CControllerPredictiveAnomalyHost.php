@@ -11,6 +11,7 @@ use CController;
 use API;
 use Modules\PredictiveAnomaly\services\CAnomalyEngine;
 use Modules\PredictiveAnomaly\services\CMLBridge;
+use Modules\PredictiveAnomaly\services\MetricConfig;
 
 class CControllerPredictiveAnomalyHost extends CController {
 
@@ -92,7 +93,8 @@ class CControllerPredictiveAnomalyHost extends CController {
 		$engine = new CAnomalyEngine();
 		$ml     = new CMLBridge();
 
-		$metric_key_map = $this->buildMetricKeyMap($metrics);
+		// Use MetricConfig so definitions come from config/metrics.php
+		$metric_key_map = MetricConfig::keyMap($metrics);
 		$paged_hostids  = array_column($paged_hosts, 'hostid');
 
 		// Fetch all items for paged hosts
@@ -170,7 +172,7 @@ class CControllerPredictiveAnomalyHost extends CController {
 				$clocks = array_column($vals, 'clock');
 
 				$z  = $engine->zScoreAnomalyScore($values);
-				$lr = $engine->linearRegressionForecast($clocks, $values, $time_range);
+				$lr = $engine->linearRegressionForecast($clocks, $values, $time_range, $slug ?? 'disk');
 
 				$ml_result = null;
 				if (in_array($model, ['all', 'arima', 'prophet']) && $ml->isAvailable()) {
@@ -250,19 +252,5 @@ class CControllerPredictiveAnomalyHost extends CController {
 		return round(min(1.0, $score / $weight), 3);
 	}
 
-	private function buildMetricKeyMap(array $metrics): array {
-		$map = [
-			'cpu'     => ['system.cpu.util', 'system.cpu.load'],
-			'memory'  => ['vm.memory.utilization', 'vm.memory.size'],
-			'disk'    => ['vfs.fs.size', 'vfs.fs.inode'],
-			'network' => ['net.if.in', 'net.if.out'],
-			'iops'    => ['vfs.dev.read.ops', 'vfs.dev.write.ops'],
-			'load'    => ['system.cpu.load'],
-		];
-		$result = [];
-		foreach ($metrics as $m) {
-			if (isset($map[$m])) $result[$m] = $map[$m];
-		}
-		return $result;
-	}
+	// buildMetricKeyMap removed — using MetricConfig::keyMap()
 }

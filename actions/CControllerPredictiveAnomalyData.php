@@ -13,6 +13,7 @@ use CController;
 use API;
 use Modules\PredictiveAnomaly\services\CAnomalyEngine;
 use Modules\PredictiveAnomaly\services\CMLBridge;
+use Modules\PredictiveAnomaly\services\MetricConfig;
 
 class CControllerPredictiveAnomalyData extends CController {
 
@@ -89,7 +90,8 @@ class CControllerPredictiveAnomalyData extends CController {
 		);
 
 		// ── Metric key map ────────────────────────────────────────────────
-		$metric_keys = $this->buildMetricKeyMap($metrics);
+		// Q3: Use MetricConfig so metric definitions come from config/metrics.php
+		$metric_keys = MetricConfig::keyMap($metrics);
 
 		// ── Score each group ──────────────────────────────────────────────
 		$engine = new CAnomalyEngine();
@@ -164,13 +166,21 @@ class CControllerPredictiveAnomalyData extends CController {
 		$anomalous     = 0;
 		$alerts        = 0;
 		$metric_avgs   = ['cpu' => 0, 'memory' => 0, 'disk' => 0];
+		$breach_etas   = []; // [metric_slug => ['eta_seconds' => int, 'threshold' => float, 'host' => string]]
 		$counted       = [];
 
 		foreach ($metric_keys as $slug => $key_patterns) {
+			// Search ALL key patterns for this metric (OR logic)
+			// Needed because different templates use different key names
+			// e.g. memory: vm.memory.utilization vs vm.memory.size[pavailable]
+			$search_patterns = array_map(
+				fn($p) => explode('[', $p)[0],  // strip [params] for prefix search
+				$key_patterns
+			);
 			$items = API::Item()->get([
 				'output'       => ['itemid', 'hostid', 'name', 'key_', 'value_type', 'units'],
 				'hostids'      => $hostids,
-				'search'       => ['key_' => $key_patterns[0]],
+				'search'       => ['key_' => $search_patterns],
 				'searchByAny'  => true,
 				'filter'       => ['value_type' => [ITEM_VALUE_TYPE_FLOAT, ITEM_VALUE_TYPE_UINT64]],
 				'monitored'    => true,
@@ -193,7 +203,7 @@ class CControllerPredictiveAnomalyData extends CController {
 				$clocks = array_column($vals, 'clock');
 
 				$z  = $engine->zScoreAnomalyScore($values);
-				$lr = $engine->linearRegressionForecast($clocks, $values, $time_range);
+				$lr = $engine->linearRegressionForecast($clocks, $values, $time_range, $slug);
 
 				$ml_result = null;
 				if (in_array($model, ['all', 'arima', 'prophet']) && $ml->isAvailable()) {
@@ -209,6 +219,15 @@ class CControllerPredictiveAnomalyData extends CController {
 				if ($score > $worst_score) {
 					$worst_score = $score;
 					$worst_host  = $hosts[$hid]['name'] ?? '';
+				}
+
+				// Track breach ETA for maintenance windows
+				if ($lr['breach_eta'] !== null && (!isset($breach_etas[$slug]) || $lr['breach_eta'] < $breach_etas[$slug]['eta_seconds'])) {
+					$breach_etas[$slug] = [
+						'eta_seconds' => $lr['breach_eta'],
+						'threshold'   => $lr['breach_threshold'] ?? 85,
+						'host'        => $hosts[$hid]['name'] ?? '',
+					];
 				}
 			}
 
@@ -310,21 +329,7 @@ class CControllerPredictiveAnomalyData extends CController {
 		return round(min(1.0, $score / $weight), 3);
 	}
 
-	private function buildMetricKeyMap(array $metrics): array {
-		$map = [
-			'cpu'     => ['system.cpu.util', 'system.cpu.load'],
-			'memory'  => ['vm.memory.utilization', 'vm.memory.size'],
-			'disk'    => ['vfs.fs.size', 'vfs.fs.inode'],
-			'network' => ['net.if.in', 'net.if.out'],
-			'iops'    => ['vfs.dev.read.ops', 'vfs.dev.write.ops'],
-			'load'    => ['system.cpu.load'],
-		];
-		$result = [];
-		foreach ($metrics as $m) {
-			if (isset($map[$m])) $result[$m] = $map[$m];
-		}
-		return $result;
-	}
+	// buildMetricKeyMap replaced by MetricConfig::keyMap()
 
 	private function emptyGroup(array $group, int $host_count): array {
 		return [

@@ -163,13 +163,20 @@ class CControllerPredictiveAnomalyHost extends CController {
 				});
 
 				if (!$matched) continue;
+				// Filter matched items to correct unit (% not bytes)
+				$matched = MetricConfig::filterItemsByUnit(array_values($matched), $slug);
+				if (!$matched) continue;
 				$item = reset($matched);
 				$iid  = $item['itemid'];
 				$vals = $trend_data[$iid] ?? [];
 				if (count($vals) < 5) continue;
 
-				$values = array_column($vals, 'value');
-				$clocks = array_column($vals, 'clock');
+				$values_raw = array_column($vals, 'value');
+				$clocks     = array_column($vals, 'clock');
+				$values = array_map(
+					fn($v) => min(100.0, max(0.0, MetricConfig::normalizeValue($v, $item['key_'], $slug))),
+					$values_raw
+				);
 
 				$z  = $engine->zScoreAnomalyScore($values);
 				$lr = $engine->linearRegressionForecast($clocks, $values, $time_range, $slug ?? 'disk');

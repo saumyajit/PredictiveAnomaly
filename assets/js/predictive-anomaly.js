@@ -314,36 +314,156 @@ function renderForecastOnCanvas(canvasId,data,metricSlug){
 	]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}${mdef.unit}`}}},scales:{x:{grid:{color:c.grid},ticks:{color:c.tick,maxTicksLimit:6}},y:{grid:{color:c.grid},ticks:{color:c.tick,callback:v=>v+(mdef.unit||'%')}}}}});
 }
 
-// ── FLEET CHARTS ──────────────────────────────────────────────────────────
+// ── FLEET CHARTS — Real Zabbix data ──────────────────────────────────────
+let fc_state = { groupid: '', metric: 'cpu', view: 'avg' };
+
 function renderForecastCharts(){
 	if(typeof Chart==='undefined'){console.warn('PAD: Chart.js not loaded');return;}
-	buildFleetLine('chart-fleet-cpu','#2563eb','#7c3aed','%',{type:'sin',base:42,amp:18});
-	buildFleetLine('chart-fleet-mem','#06b6d4','#f97316','%',{type:'linear',base:55,slope:0.4});
-	buildDiskChart();
+	// Wire up group selector
+	const groupSel=qs('#pad-fc-group');
+	if(groupSel && !groupSel._padBound){
+		groupSel._padBound=true;
+		groupSel.addEventListener('change',()=>{fc_state.groupid=groupSel.value;loadFleetCharts();});
+		// Auto-select first group if groups are loaded
+		if(!fc_state.groupid && state.groups.length){
+			const firstId=state.groups[0].groupid;
+			groupSel.value=firstId; fc_state.groupid=firstId; loadFleetCharts();
+		}
+	}
+	// Wire up metric buttons
+	qsa('.pad-fc-metric-btn').forEach(btn=>{
+		if(!btn._padBound){btn._padBound=true;btn.addEventListener('click',function(){
+			qsa('.pad-fc-metric-btn').forEach(b=>b.classList.remove('active'));
+			this.classList.add('active');
+			fc_state.metric=this.dataset.metric; loadFleetCharts();
+		});}
+	});
+	// Wire up view toggle (avg vs per-host)
+	qsa('#pad-fc-view .pad-radio').forEach(r=>{
+		if(!r._padBound){r._padBound=true;r.addEventListener('click',function(){
+			qsa('#pad-fc-view .pad-radio').forEach(x=>x.classList.remove('active')); this.classList.add('active');
+			fc_state.view=this.querySelector('input').value; loadFleetCharts();
+		});}
+	});
 }
-function buildFleetLine(id,aC,fC,units,opts){
-	const canvas=qs(`#${id}`);if(!canvas)return;
-	if(state.charts[id])state.charts[id].destroy();
-	const N=36,F=8,c=cc();
-	const labels=Array.from({length:N+F},(_,i)=>((14-N+i+48)%24+'').padStart(2,'0')+':00');
-	const actual=Array.from({length:N},(_,i)=>opts.type==='sin'?Math.min(100,opts.base+opts.amp*Math.sin(i*0.28)+(Math.random()-.5)*5):Math.min(100,opts.base+opts.slope*i+(Math.random()-.5)*3));
-	const forecast=Array.from({length:N+F},(_,i)=>opts.type==='sin'?Math.min(100,opts.base+opts.amp*Math.sin(i*0.28)):Math.min(100,opts.base+opts.slope*i));
-	state.charts[id]=new Chart(canvas.getContext('2d'),{type:'line',data:{labels,datasets:[
-		{data:forecast.map(v=>Math.min(100,v+10)),borderColor:'transparent',backgroundColor:`${fC}18`,fill:'+1',pointRadius:0,tension:0.4},
-		{data:forecast.map(v=>Math.max(0,v-10)),borderColor:'transparent',fill:false,pointRadius:0,tension:0.4},
-		{label:'Forecast',data:forecast,borderColor:fC,borderDash:[5,4],borderWidth:1.5,backgroundColor:'transparent',pointRadius:0,tension:0.4},
-		{label:'Actual',data:[...actual,...new Array(F).fill(null)],borderColor:aC,borderWidth:2,backgroundColor:'transparent',pointRadius:0,tension:0.4},
-	]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:c.grid},ticks:{color:c.tick,maxTicksLimit:9}},y:{min:0,max:100,grid:{color:c.grid},ticks:{color:c.tick,callback:v=>v+units}}}}});
+
+async function loadFleetCharts(){
+	if(!fc_state.groupid){return;}
+	const wrap=qs('#pad-fc-charts-wrap');
+	if(wrap)wrap.innerHTML=`<div class="pad-spinner-wrap"><div class="pad-spinner"></div>Loading Zabbix data…</div>`;
+	try{
+		const p=new URLSearchParams({action:CFG.action_fleet,groupid:fc_state.groupid,metric:fc_state.metric,time_range:CFG.filter.time_range||'24h'});
+		const r=await fetch(`zabbix.php?${p}`,{headers:{'X-Requested-With':'XMLHttpRequest'}});
+		const d=await r.json();
+		if(d.error){if(wrap)wrap.innerHTML=`<div class="pad-empty">⚠ ${escHtml(d.error)}</div>`;return;}
+		renderFleetResult(d);
+	}catch(e){if(wrap)wrap.innerHTML=`<div class="pad-error">⚠ ${escHtml(e.message)}</div>`;}
 }
-function buildDiskChart(){
-	const canvas=qs('#chart-fleet-disk');if(!canvas)return;
-	if(state.charts['chart-fleet-disk'])state.charts['chart-fleet-disk'].destroy();
-	const N=30,F=14,c=cc();
-	const labels=Array.from({length:N+F},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(N-i));return d.toISOString().slice(5,10);});
-	const hosts=[{l:'Database Servers',c:'#2563eb',b:55,s:0.55},{l:'Storage Nodes',c:'#ef4444',b:72,s:0.70},{l:'Web Servers',c:'#10b981',b:42,s:0.35}];
-	const datasets=hosts.map(h=>{const a=Array.from({length:N},(_,i)=>h.b+h.s*i+(Math.random()-.5)*2),f=Array.from({length:F},(_,i)=>a[N-1]+h.s*(i+1));return{label:h.l,data:[...a,...f],borderColor:h.c,borderWidth:2,backgroundColor:'transparent',pointRadius:0,tension:0.3,segment:{borderDash:ctx=>ctx.p0DataIndex>=N-1?[5,3]:[]}};});
-	datasets.push({label:'85%',data:new Array(N+F).fill(85),borderColor:'#ef4444',borderDash:[6,4],borderWidth:1.5,backgroundColor:'transparent',pointRadius:0});
-	state.charts['chart-fleet-disk']=new Chart(canvas.getContext('2d'),{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:c.grid},ticks:{color:c.tick,maxTicksLimit:10}},y:{min:20,max:100,grid:{color:c.grid},ticks:{color:c.tick,callback:v=>v+'%'}}}}});
+
+function renderFleetResult(d){
+	const wrap=qs('#pad-fc-charts-wrap');if(!wrap)return;
+	wrap.innerHTML='';
+	const mdef=METRIC_DEFS[d.metric_slug]||{unit:'%',icon:'📊'};
+	const unit=d.unit||mdef.unit||'%';
+	const c=cc();
+
+	// ── Stats strip ───────────────────────────────────────────────────────
+	const stats=el('div','pad-fc-stats');
+	const breachText=d.stats.breach_eta!=null?(d.stats.breach_eta===0?'⚡ Threshold exceeded NOW':`⚡ Threshold in ~${Math.round(d.stats.breach_eta/86400)}d`):'✅ No breach predicted';
+	const breachColor=d.stats.breach_eta!=null&&d.stats.breach_eta<7*86400?'#ef4444':d.stats.breach_eta!=null?'#f59e0b':'#10b981';
+	stats.innerHTML=`
+		<div class="pad-fc-stat"><span class="pad-fc-stat__label">Group</span><span class="pad-fc-stat__val">${escHtml(d.group)}</span></div>
+		<div class="pad-fc-stat"><span class="pad-fc-stat__label">Metric</span><span class="pad-fc-stat__val">${d.icon||''} ${escHtml(d.metric)}</span></div>
+		<div class="pad-fc-stat"><span class="pad-fc-stat__label">Hosts</span><span class="pad-fc-stat__val">${d.host_count}</span></div>
+		<div class="pad-fc-stat"><span class="pad-fc-stat__label">Items</span><span class="pad-fc-stat__val">${d.item_count}</span></div>
+		<div class="pad-fc-stat"><span class="pad-fc-stat__label">Avg Now</span><span class="pad-fc-stat__val">${d.series.length?(d.series[d.series.length-1].y).toFixed(1)+unit:'—'}</span></div>
+		<div class="pad-fc-stat"><span class="pad-fc-stat__label">Anomaly</span><span class="pad-fc-stat__val">${(d.stats.score*100).toFixed(0)}%</span></div>
+		<div class="pad-fc-stat"><span class="pad-fc-stat__label">Trend R²</span><span class="pad-fc-stat__val">${d.stats.r_squared}</span></div>
+		<div class="pad-fc-stat" style="color:${breachColor}"><span class="pad-fc-stat__label">Forecast</span><span class="pad-fc-stat__val">${breachText}</span></div>`;
+	wrap.appendChild(stats);
+
+	// ── Aggregated average chart ───────────────────────────────────────────
+	const avgCard=el('div','pad-card pad-card--full');
+	avgCard.innerHTML=`
+		<div class="pad-card__head">
+			<div class="pad-card__title">${d.icon||'📊'} ${escHtml(d.group)} — ${escHtml(d.metric)} ${fc_state.view==='avg'?'Fleet Average':'Per Host'} + Forecast</div>
+			<div class="pad-card__actions">
+				<span class="pad-tag pad-tag--native">Zabbix ${CFG.filter.time_range||'24h'}</span>
+				<span class="pad-tag" style="background:rgba(37,99,235,.1);color:#60a5fa;border:1px solid rgba(37,99,235,.3)">${d.item_count} items · ${d.host_count} hosts</span>
+			</div>
+		</div>
+		<div class="pad-card__body">
+			<div class="pad-chart-wrap" style="height:280px"><canvas id="chart-fleet-main"></canvas></div>
+		</div>`;
+	wrap.appendChild(avgCard);
+
+	// Render after DOM insertion
+	requestAnimationFrame(()=>{
+		const canvas=qs('#chart-fleet-main');if(!canvas)return;
+		if(state.charts['fleet-main'])state.charts['fleet-main'].destroy();
+
+		const N=d.series.length,F=d.forecast.length;
+		const aLabels=d.series.map(p=>fmtLabel(p.x,CFG.filter.time_range||'24h'));
+		const fLabels=d.forecast.map(p=>fmtLabel(p.x,CFG.filter.time_range||'24h'));
+		const aVals=d.series.map(p=>p.y);
+		const fVals=d.forecast.map(p=>p.y);
+		const upper=d.forecast.map(p=>p.upper);
+		const lower=d.forecast.map(p=>p.lower);
+		const ptC=d.series.map(p=>p.anomaly?'#ef4444':'transparent');
+		const ptR=d.series.map(p=>p.anomaly?5:0);
+
+		const datasets=[];
+		if(fc_state.view==='hosts'&&d.host_series&&d.host_series.length){
+			// Per-host lines
+			d.host_series.forEach(hs=>{
+				datasets.push({label:hs.name,data:hs.points.map(p=>({x:p.x,y:p.y})),borderColor:hs.color,borderWidth:1.5,backgroundColor:'transparent',pointRadius:0,tension:0.3});
+			});
+		}else{
+			// Avg + CI + forecast
+			datasets.push({label:'CI Upper',data:[...new Array(N).fill(null),...upper],borderColor:'transparent',backgroundColor:'rgba(124,58,237,0.1)',fill:'+1',pointRadius:0,tension:0.4});
+			datasets.push({label:'CI Lower',data:[...new Array(N).fill(null),...lower],borderColor:'transparent',fill:false,pointRadius:0,tension:0.4});
+			datasets.push({label:'Forecast',data:[...new Array(N-1).fill(null),aVals[N-1],...fVals],borderColor:'#7c3aed',borderDash:[5,4],borderWidth:1.5,backgroundColor:'transparent',pointRadius:0,tension:0.4});
+			datasets.push({label:'Fleet Average',data:aVals,borderColor:'#2563eb',borderWidth:2,backgroundColor:'transparent',pointBackgroundColor:ptC,pointRadius:ptR,tension:0.3});
+		}
+
+		// For per-host view: build unified label array from all host timestamps
+		let chartLabels;
+		if(fc_state.view==='hosts'&&d.host_series&&d.host_series.length){
+			const allTs=[...new Set(d.host_series.flatMap(hs=>hs.points.map(p=>p.x)))].sort((a,b)=>a-b);
+			chartLabels=allTs.map(ts=>fmtLabel(ts,CFG.filter.time_range||'24h'));
+			const tsIdx=Object.fromEntries(allTs.map((ts,i)=>[ts,i]));
+			// Re-index each host dataset to the unified label positions
+			datasets.forEach(ds=>{
+				const hs=d.host_series.find(h=>h.name===ds.label);
+				if(!hs)return;
+				const sparse=new Array(allTs.length).fill(null);
+				hs.points.forEach(p=>{const idx=tsIdx[p.x];if(idx!==undefined)sparse[idx]=p.y;});
+				ds.data=sparse;
+			});
+		}else{
+			chartLabels=[...aLabels,...fLabels];
+		}
+		state.charts['fleet-main']=new Chart(canvas.getContext('2d'),{
+			type:'line',
+			data:{labels:chartLabels,datasets},
+			options:{responsive:true,maintainAspectRatio:false,
+				plugins:{legend:{
+					display:fc_state.view==='hosts',
+					labels:{color:c.tick,font:{size:10},usePointStyle:true,pointStyle:'line'}
+				}},
+				scales:{
+					x:{grid:{color:c.grid},ticks:{color:c.tick,maxTicksLimit:10}},
+					y:{grid:{color:c.grid},ticks:{color:c.tick,callback:v=>v+unit}},
+				},
+			},
+		});
+	});
+}
+
+function fmtLabel(ms, range){
+	const d=new Date(ms);
+	if(range==='7d'||range==='30d') return d.toISOString().slice(5,10);
+	return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 }
 
 // ── HEATMAP ───────────────────────────────────────────────────────────────

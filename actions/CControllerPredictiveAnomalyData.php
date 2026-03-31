@@ -190,6 +190,10 @@ class CControllerPredictiveAnomalyData extends CController {
 
 			if (!$items) continue;
 
+			// Filter items to only those with correct unit (e.g. % not bytes)
+			$items = MetricConfig::filterItemsByUnit($items, $slug);
+			if (!$items) continue;
+
 			$trend_data = $this->fetchTrendData(array_keys($items), $time_from, $time_till, $use_trends);
 
 			$host_scores = [];
@@ -199,8 +203,13 @@ class CControllerPredictiveAnomalyData extends CController {
 				$vals = $trend_data[$iid] ?? [];
 				if (count($vals) < 5) continue;
 
-				$values = array_column($vals, 'value');
-				$clocks = array_column($vals, 'clock');
+				$values_raw = array_column($vals, 'value');
+				$clocks     = array_column($vals, 'clock');
+				// Normalize: invert pavailable → % used; clamp raw % to [0,100]
+				$values = array_map(
+					fn($v) => min(100.0, max(0.0, MetricConfig::normalizeValue($v, $item['key_'], $slug))),
+					$values_raw
+				);
 
 				$z  = $engine->zScoreAnomalyScore($values);
 				$lr = $engine->linearRegressionForecast($clocks, $values, $time_range, $slug);
@@ -264,19 +273,61 @@ class CControllerPredictiveAnomalyData extends CController {
 			? round(max($scores_flat) * 0.6 + (array_sum($scores_flat) / count($scores_flat)) * 0.4, 3)
 			: 0;
 
+		// Build maintenance windows from breach ETAs + near-threshold warnings
+		$thresholds_cfg = file_exists(__DIR__.'/../config/thresholds.php') ? require(__DIR__.'/../config/thresholds.php') : [];
+		$lead_days = (int)($thresholds_cfg['maintenance_lead_days'] ?? 7);
+		$min_days  = (int)($thresholds_cfg['maintenance_min_days']  ?? 1);
+		$ex_cfg    = $thresholds_cfg['exhaustion_thresholds'] ?? [];
+
+		// Add entries for metrics already AT or NEAR threshold
+		foreach ($metric_avgs as $mslug => $avg_val) {
+			if (!is_numeric($avg_val)) continue;
+			$mthreshold = (float)($ex_cfg[$mslug] ?? 0);
+			if ($mthreshold <= 0) continue;
+			if ($avg_val >= $mthreshold && !isset($breach_etas[$mslug])) {
+				// Already breached
+				$breach_etas[$mslug] = ['eta_seconds' => 0, 'threshold' => $mthreshold, 'host' => $worst_host];
+			} elseif ($avg_val >= ($mthreshold - 12) && !isset($breach_etas[$mslug])) {
+				// Within 12% of threshold — estimate days at ~0.3%/day growth
+				$gap      = $mthreshold - $avg_val;
+				$est_secs = max(86400, (int)(($gap / 0.3) * 86400));
+				$breach_etas[$mslug] = ['eta_seconds' => $est_secs, 'threshold' => $mthreshold, 'host' => $worst_host];
+			}
+		}
+
+		$maintenance_windows = [];
+		foreach ($breach_etas as $mslug => $eta_data) {
+			$breach_days = $eta_data['eta_seconds'] === 0 ? 0 : (int)ceil($eta_data['eta_seconds'] / 86400);
+			$maint_days  = $breach_days <= $lead_days ? max(0, $breach_days - 1) : $breach_days - $lead_days;
+			$maintenance_windows[] = [
+				'metric'      => $mslug,
+				'host'        => $eta_data['host'],
+				'breach_days' => $breach_days,
+				'maint_days'  => $maint_days,
+				'maint_date'  => date('Y-m-d', time() + $maint_days * 86400),
+				'breach_date' => $breach_days === 0 ? date('Y-m-d') : date('Y-m-d', time() + $breach_days * 86400),
+				'threshold'   => $eta_data['threshold'],
+				'current_val' => round($metric_avgs[$mslug] ?? 0, 1),
+				'urgency'     => $breach_days <= 7 ? 'critical' : ($breach_days <= 30 ? 'warning' : 'info'),
+			];
+		}
+		usort($maintenance_windows, fn($a, $b) => $a['breach_days'] - $b['breach_days']);
+
 		return [
-			'groupid'          => $groupid,
-			'name'             => $group['name'],
-			'host_count'       => $host_count,
-			'anomalous'        => $anomalous,
-			'anomaly_score'    => $anomaly_score,
-			'score'            => $anomaly_score,
-			'worst_host'       => $worst_host,
-			'predicted_alerts' => $alerts,
-			'metrics'          => $metric_scores,
-			'cpu'              => $metric_avgs['cpu'] ?? 0,
-			'memory'           => $metric_avgs['memory'] ?? 0,
-			'disk'             => $metric_avgs['disk'] ?? 0,
+			'groupid'             => $groupid,
+			'name'                => $group['name'],
+			'host_count'          => $host_count,
+			'anomalous'           => $anomalous,
+			'anomaly_score'       => $anomaly_score,
+			'score'               => $anomaly_score,
+			'worst_host'          => $worst_host,
+			'predicted_alerts'    => $alerts,
+			'metrics'             => $metric_scores,
+			'cpu'                 => $metric_avgs['cpu']    ?? 0,
+			'memory'              => $metric_avgs['memory'] ?? 0,
+			'disk'                => $metric_avgs['disk']   ?? 0,
+			'breach_etas'         => $breach_etas,
+			'maintenance_windows' => $maintenance_windows,
 		];
 	}
 
@@ -337,6 +388,7 @@ class CControllerPredictiveAnomalyData extends CController {
 			'host_count' => $host_count, 'anomalous' => 0, 'anomaly_score' => 0,
 			'score' => 0, 'worst_host' => '', 'predicted_alerts' => 0,
 			'metrics' => [], 'cpu' => 0, 'memory' => 0, 'disk' => 0,
+			'breach_etas' => [], 'maintenance_windows' => [],
 		];
 	}
 }

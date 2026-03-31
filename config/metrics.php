@@ -4,128 +4,107 @@
  * PREDICTIVE ANOMALY DASHBOARD — METRIC CONFIGURATION
  * ============================================================================
  *
- * Edit this file to define which Zabbix item keys map to each metric slug.
- * This file is loaded by all controllers at runtime.
- *
  * HOW TO CUSTOMISE:
- *   - Add a new metric slug with its item key patterns
- *   - Each pattern is a prefix match against item key_ (no brackets needed)
- *   - Multiple patterns per metric are OR'd — the first matching item is used
- *   - Set 'enabled' => false to hide a metric from the UI without deleting it
- *   - 'label'    — display name shown in filter chips
- *   - 'unit'     — suffix appended to values (%, MB, GB, etc.)
- *   - 'icon'     — emoji shown in the UI
- *   - 'threshold'— usage % above which anomaly scoring is boosted
- *                  (e.g. 70 means: only score seriously if value > 70%)
+ *   - 'keys'         — Zabbix item key prefixes (matched with searchByAny)
+ *   - 'prefer_units' — If set, ONLY use items whose Zabbix 'units' field matches.
+ *                      Set to '%' to ensure we only get percentage items, not bytes.
+ *                      Set to null to accept any unit (bytes, bps, etc.)
+ *   - 'unit'         — Display unit appended to chart axis values
+ *   - 'threshold'    — Usage % above which anomaly scoring is boosted (0 = disabled)
+ *   - 'enabled'      — Set false to hide metric without deleting it
  *
- * ITEM KEY PATTERNS:
- *   Zabbix item keys like "system.cpu.util[,idle]" are matched by prefix.
- *   Write just the base key without brackets: "system.cpu.util"
- *
+ * KEY EXAMPLES FOR COMMON TEMPLATES:
+ *   CPU %:      system.cpu.util        (all non-idle variants)
+ *   Memory %:   vm.memory.utilization  (agent2) | vm.memory.size[pused] (agent)
+ *   Disk %:     vfs.fs.size[/,pused]   (specific mount) | vfs.fs.size[pused] (any)
+ *   Network:    net.if.in | net.if.out (bytes/sec)
  * ============================================================================
  */
 
 return [
 
     'cpu' => [
-        'label'     => 'CPU',
-        'icon'      => '⚡',
-        'unit'      => '%',
-        'enabled'   => true,
-        'threshold' => 70,   // boost anomaly score when CPU > 70%
-        'keys'      => [
-            'system.cpu.util',          // Zabbix agent: CPU utilisation
-            'system.cpu.load',          // Zabbix agent: CPU load
-            'vm.cpu.util',              // VMware CPU
-            'proc.cpu.util',            // per-process CPU
+        'label'        => 'CPU',
+        'icon'         => '⚡',
+        'unit'         => '%',
+        'enabled'      => true,
+        'threshold'    => 70,
+        'prefer_units' => '%',          // Only accept % items (not raw counts)
+        'keys'         => [
+            'system.cpu.util',          // Zabbix agent: CPU utilisation %
+            'vm.cpu.util',              // VMware CPU %
         ],
     ],
 
     'memory' => [
-        'label'     => 'Memory',
-        'icon'      => '🧠',
-        'unit'      => '%',
-        'enabled'   => true,
-        'threshold' => 75,
-        'keys'      => [
-            'vm.memory.utilization',    // Zabbix agent 2: memory %
-            'vm.memory.size',           // Zabbix agent: memory size variants
-            'system.swap.size',         // Swap usage
+        'label'        => 'Memory',
+        'icon'         => '🧠',
+        'unit'         => '%',
+        'enabled'      => true,
+        'threshold'    => 75,
+        'prefer_units' => '%',          // CRITICAL: reject vm.memory.size[total] (bytes)
+        'keys'         => [
+            'vm.memory.utilization',    // Zabbix agent2: memory used % (preferred)
+            'vm.memory.size[pused]',    // Zabbix agent:  memory used %
+            'vm.memory.size[pavailable]', // Zabbix agent: memory available % (inverted)
         ],
     ],
 
     'disk' => [
-        'label'     => 'Disk',
-        'icon'      => '💾',
-        'unit'      => '%',
-        'enabled'   => true,
-        'threshold' => 75,   // alert when disk > 75% used
-        'keys'      => [
-            'vfs.fs.size',              // Zabbix agent: filesystem size (pused variant)
-            'vfs.fs.inode',             // Inode usage
+        'label'        => 'Disk',
+        'icon'         => '💾',
+        'unit'         => '%',
+        'enabled'      => true,
+        'threshold'    => 75,
+        'prefer_units' => '%',          // CRITICAL: reject vfs.fs.size[/,total] (bytes)
+        'keys'         => [
+            'vfs.fs.size',              // matches pused variant — will filter by unit=%
         ],
     ],
 
     'network' => [
-        'label'     => 'Network',
-        'icon'      => '🌐',
-        'unit'      => 'bps',
-        'enabled'   => true,
-        'threshold' => 0,    // 0 = always score, no threshold
-        'keys'      => [
-            'net.if.in',               // Zabbix agent: incoming traffic
-            'net.if.out',              // Zabbix agent: outgoing traffic
-            'net.if.total',            // Combined traffic
+        'label'        => 'Network',
+        'icon'         => '🌐',
+        'unit'         => 'bps',
+        'enabled'      => true,
+        'threshold'    => 0,
+        'prefer_units' => null,         // bytes/sec acceptable
+        'keys'         => [
+            'net.if.in',
+            'net.if.out',
         ],
     ],
 
     'iops' => [
-        'label'     => 'IOPS',
-        'icon'      => '📀',
-        'unit'      => 'ops',
-        'enabled'   => true,
-        'threshold' => 0,
-        'keys'      => [
-            'vfs.dev.read.ops',        // Disk read operations/sec
-            'vfs.dev.write.ops',       // Disk write operations/sec
-            'vfs.dev.read.rate',       // Alternative read rate key
+        'label'        => 'IOPS',
+        'icon'         => '📀',
+        'unit'         => 'ops',
+        'enabled'      => true,
+        'threshold'    => 0,
+        'prefer_units' => null,
+        'keys'         => [
+            'vfs.dev.read.ops',
+            'vfs.dev.write.ops',
+            'vfs.dev.read.rate',
         ],
     ],
 
     'load' => [
-        'label'     => 'Load',
-        'icon'      => '📊',
-        'unit'      => '',
-        'enabled'   => true,
-        'threshold' => 0,
-        'keys'      => [
-            'system.cpu.load',         // 1/5/15 min load average
+        'label'        => 'Load',
+        'icon'         => '📊',
+        'unit'         => '',
+        'enabled'      => true,
+        'threshold'    => 0,
+        'prefer_units' => null,
+        'keys'         => [
+            'system.cpu.load',
         ],
     ],
 
     // ── ADD CUSTOM METRICS BELOW ──────────────────────────────────────────
-    //
     // 'oracle_waits' => [
-    //     'label'     => 'Oracle Waits',
-    //     'icon'      => '🗄',
-    //     'unit'      => 'ms',
-    //     'enabled'   => true,
-    //     'threshold' => 0,
-    //     'keys'      => [
-    //         'oracle.wait_time',
-    //         'db.oracle.session',
-    //     ],
+    //     'label' => 'Oracle Waits', 'icon' => '🗄', 'unit' => 'ms',
+    //     'enabled' => true, 'threshold' => 0, 'prefer_units' => null,
+    //     'keys' => ['oracle.wait_time'],
     // ],
-    //
-    // 'jvm_heap' => [
-    //     'label'     => 'JVM Heap',
-    //     'icon'      => '☕',
-    //     'unit'      => '%',
-    //     'enabled'   => true,
-    //     'threshold' => 80,
-    //     'keys'      => [
-    //         'jmx[java.lang:type=Memory,HeapMemoryUsage.used]',
-    //     ],
-    // ],
-
 ];

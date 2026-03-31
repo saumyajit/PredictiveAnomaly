@@ -332,3 +332,34 @@
 .pad-threshold-input:focus { border-color:#2563eb; }
 .pad-chip.sev-crit.active { background:rgba(239,68,68,.12); border-color:rgba(239,68,68,.5); color:#f87171; }
 .pad-chip.sev-warn.active { background:rgba(249,115,22,.12); border-color:rgba(249,115,22,.5); color:#fb923c; }
+
+/* ── Forecasts tab ──────────────────────────────────────────────────────── */
+.pad-forecast-bar {
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  background:var(--pad-bg-surface); border:1px solid var(--pad-border);
+  border-radius:8px; padding:12px 16px; margin-bottom:14px;
+}
+.pad-forecast-bar__left  { display:flex; align-items:center; gap:8px; }
+.pad-forecast-bar__right { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.pad-forecast-bar__metrics { display:flex; gap:4px; flex-wrap:wrap; }
+.pad-fc-metric-btn {
+  padding:4px 12px; border-radius:12px; border:1px solid var(--pad-border);
+  background:var(--pad-bg-input); color:var(--pad-text-3); font-size:11px;
+  font-family:'IBM Plex Mono',monospace; cursor:pointer; transition:all .12s;
+}
+.pad-fc-metric-btn:hover { color:var(--pad-text-1); border-color:var(--pad-border-hi); }
+.pad-fc-metric-btn.active { background:rgba(37,99,235,.1); border-color:rgba(37,99,235,.5); color:#60a5fa; }
+
+/* Fleet stats strip */
+.pad-fc-stats {
+  display:flex; gap:0; flex-wrap:wrap;
+  background:var(--pad-bg-card); border:1px solid var(--pad-border);
+  border-radius:8px; overflow:hidden; margin-bottom:14px;
+}
+.pad-fc-stat {
+  display:flex; flex-direction:column; gap:3px; padding:10px 16px;
+  border-right:1px solid var(--pad-border); flex:1; min-width:80px;
+}
+.pad-fc-stat:last-child { border-right:none; }
+.pad-fc-stat__label { font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:.1em; color:var(--pad-text-3); }
+.pad-fc-stat__val   { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--pad-text-1); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

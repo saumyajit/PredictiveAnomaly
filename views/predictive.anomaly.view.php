@@ -321,33 +321,40 @@ $severity_levels = $data['severity_levels'] ?? [];
 
 <!-- ═══ TAB: FORECASTS ═══ -->
 <div class="pad-tab-panel" id="tab-forecasts">
-  <div class="pad-grid pad-grid--2" id="pad-fleet-charts">
-    <div class="pad-card">
-      <div class="pad-card__head">
-        <div class="pad-card__title">⚡ <?= _('Fleet CPU — Avg + Forecast') ?></div>
-        <div class="pad-card__actions"><span class="pad-tag pad-tag--native">Native</span></div>
-      </div>
-      <div class="pad-card__body">
-        <div class="pad-chart-wrap" style="height:220px"><canvas id="chart-fleet-cpu"></canvas></div>
+  <!-- Selector bar: pick which group + metric to forecast -->
+  <div class="pad-forecast-bar">
+    <div class="pad-forecast-bar__left">
+      <label class="pad-flabel"><?= _('Host Group') ?></label>
+      <select id="pad-fc-group" class="pad-select">
+        <option value=""><?= _('— Select a group —') ?></option>
+        <?php foreach ($data['all_groups'] as $g): ?>
+        <option value="<?= $g['groupid'] ?>"><?= htmlspecialchars($g['name']) ?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div class="pad-forecast-bar__metrics" id="pad-fc-metrics">
+      <?php foreach ($metric_defs as $slug => $def): ?>
+      <button class="pad-fc-metric-btn <?= $slug==='cpu'?'active':'' ?>"
+              data-metric="<?= $slug ?>">
+        <?= htmlspecialchars($def['icon'].' '.$def['label']) ?>
+      </button>
+      <?php endforeach; ?>
+    </div>
+    <div class="pad-forecast-bar__right">
+      <label class="pad-flabel"><?= _('View') ?></label>
+      <div class="pad-radio-group" id="pad-fc-view">
+        <label class="pad-radio active"><input type="radio" name="fc_view" value="avg" checked hidden/>Avg</label>
+        <label class="pad-radio"><input type="radio" name="fc_view" value="hosts" hidden/>Per Host</label>
       </div>
     </div>
-    <div class="pad-card">
-      <div class="pad-card__head">
-        <div class="pad-card__title">🧠 <?= _('Fleet Memory — Avg + Forecast') ?></div>
-        <div class="pad-card__actions"><span class="pad-tag pad-tag--native">Native</span></div>
-      </div>
-      <div class="pad-card__body">
-        <div class="pad-chart-wrap" style="height:220px"><canvas id="chart-fleet-mem"></canvas></div>
-      </div>
-    </div>
-    <div class="pad-card pad-card--full">
-      <div class="pad-card__head">
-        <div class="pad-card__title">💾 <?= _('Fleet Disk — 30d + 14d Forecast') ?></div>
-        <div class="pad-card__actions"><span class="pad-tag pad-tag--native">Zabbix Trends</span></div>
-      </div>
-      <div class="pad-card__body">
-        <div class="pad-chart-wrap" style="height:240px"><canvas id="chart-fleet-disk"></canvas></div>
-      </div>
+  </div>
+
+  <!-- Charts container — rendered dynamically by JS -->
+  <div id="pad-fc-charts-wrap">
+    <div class="pad-empty" style="padding:48px 0;text-align:center">
+      <div style="font-size:32px;margin-bottom:10px">📈</div>
+      <div><?= _('Select a host group above to load real Zabbix forecast data') ?></div>
+      <div style="margin-top:6px;font-size:11px;color:var(--pad-text-3)"><?= _('Data is fetched from Zabbix history/trends and projected with linear regression') ?></div>
     </div>
   </div>
 </div>
@@ -392,6 +399,7 @@ window.PAD_CONFIG = <?= json_encode([
 	'action_data'     => 'predictive.anomaly.data',
 	'action_host'     => 'predictive.anomaly.host',
 	'action_forecast' => 'predictive.anomaly.forecast',
+	'action_fleet'    => 'predictive.anomaly.fleet',
 	'filter'          => $filter,
 	'total_hosts'     => $data['total_hosts'],
 	'time_from'       => $data['time_from'],

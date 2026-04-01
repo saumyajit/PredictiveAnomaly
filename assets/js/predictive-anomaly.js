@@ -315,7 +315,7 @@ function renderForecastOnCanvas(canvasId,data,metricSlug){
 }
 
 // ── FLEET CHARTS — Real Zabbix data ──────────────────────────────────────
-let fc_state = { groupid: '', metric: 'cpu', view: 'avg' };
+let fc_state = { groupid: '', metric: 'cpu', view: 'avg', horizon: 30 };
 
 function renderForecastCharts(){
 	if(typeof Chart==='undefined'){console.warn('PAD: Chart.js not loaded');return;}
@@ -345,6 +345,13 @@ function renderForecastCharts(){
 			fc_state.view=this.querySelector('input').value; loadFleetCharts();
 		});}
 	});
+	// Wire up forecast horizon
+	qsa('#pad-fc-horizon .pad-radio').forEach(r=>{
+		if(!r._padBound){r._padBound=true;r.addEventListener('click',function(){
+			qsa('#pad-fc-horizon .pad-radio').forEach(x=>x.classList.remove('active')); this.classList.add('active');
+			fc_state.horizon=parseInt(this.querySelector('input').value,10)||30; loadFleetCharts();
+		});}
+	});
 }
 
 async function loadFleetCharts(){
@@ -352,7 +359,7 @@ async function loadFleetCharts(){
 	const wrap=qs('#pad-fc-charts-wrap');
 	if(wrap)wrap.innerHTML=`<div class="pad-spinner-wrap"><div class="pad-spinner"></div>Loading Zabbix data…</div>`;
 	try{
-		const p=new URLSearchParams({action:CFG.action_fleet,groupid:fc_state.groupid,metric:fc_state.metric,time_range:CFG.filter.time_range||'24h'});
+		const p=new URLSearchParams({action:CFG.action_fleet,groupid:fc_state.groupid,metric:fc_state.metric,time_range:CFG.filter.time_range||'24h',forecast_days:fc_state.horizon||30});
 		const r=await fetch(`zabbix.php?${p}`,{headers:{'X-Requested-With':'XMLHttpRequest'}});
 		const d=await r.json();
 		if(d.error){if(wrap)wrap.innerHTML=`<div class="pad-empty">⚠ ${escHtml(d.error)}</div>`;return;}
@@ -386,7 +393,7 @@ function renderFleetResult(d){
 	const avgCard=el('div','pad-card pad-card--full');
 	avgCard.innerHTML=`
 		<div class="pad-card__head">
-			<div class="pad-card__title">${d.icon||'📊'} ${escHtml(d.group)} — ${escHtml(d.metric)} ${fc_state.view==='avg'?'Fleet Average':'Per Host'} + Forecast</div>
+			<div class="pad-card__title">${d.icon||'📊'} ${escHtml(d.group)} — ${escHtml(d.metric)} ${fc_state.view==='avg'?'Fleet Average':'Per Host'} + ${fc_state.horizon}d Forecast</div>
 			<div class="pad-card__actions">
 				<span class="pad-tag pad-tag--native">Zabbix ${CFG.filter.time_range||'24h'}</span>
 				<span class="pad-tag" style="background:rgba(37,99,235,.1);color:#60a5fa;border:1px solid rgba(37,99,235,.3)">${d.item_count} items · ${d.host_count} hosts</span>
@@ -422,7 +429,7 @@ function renderFleetResult(d){
 			// Avg + CI + forecast
 			datasets.push({label:'CI Upper',data:[...new Array(N).fill(null),...upper],borderColor:'transparent',backgroundColor:'rgba(124,58,237,0.1)',fill:'+1',pointRadius:0,tension:0.4});
 			datasets.push({label:'CI Lower',data:[...new Array(N).fill(null),...lower],borderColor:'transparent',fill:false,pointRadius:0,tension:0.4});
-			datasets.push({label:'Forecast',data:[...new Array(N-1).fill(null),aVals[N-1],...fVals],borderColor:'#7c3aed',borderDash:[5,4],borderWidth:1.5,backgroundColor:'transparent',pointRadius:0,tension:0.4});
+			datasets.push({label:`📈 Forecast (${fc_state.horizon}d)`,data:[...new Array(N-1).fill(null),aVals[N-1],...fVals],borderColor:'#7c3aed',borderDash:[5,4],borderWidth:2,backgroundColor:'transparent',pointRadius:0,tension:0.4});
 			datasets.push({label:'Fleet Average',data:aVals,borderColor:'#2563eb',borderWidth:2,backgroundColor:'transparent',pointBackgroundColor:ptC,pointRadius:ptR,tension:0.3});
 		}
 
@@ -443,17 +450,40 @@ function renderFleetResult(d){
 		}else{
 			chartLabels=[...aLabels,...fLabels];
 		}
+		// Add threshold line for avg view
+		if(fc_state.view!=='hosts'&&d.stats&&d.stats.breach_threshold){
+			datasets.push({label:`${d.stats.breach_threshold}% Threshold`,data:new Array(chartLabels.length).fill(d.stats.breach_threshold),borderColor:'rgba(239,68,68,0.5)',borderDash:[4,4],borderWidth:1,backgroundColor:'transparent',pointRadius:0});
+		}
+
 		state.charts['fleet-main']=new Chart(canvas.getContext('2d'),{
 			type:'line',
 			data:{labels:chartLabels,datasets},
-			options:{responsive:true,maintainAspectRatio:false,
-				plugins:{legend:{
-					display:fc_state.view==='hosts',
-					labels:{color:c.tick,font:{size:10},usePointStyle:true,pointStyle:'line'}
-				}},
+			options:{
+				responsive:true,maintainAspectRatio:false,
+				interaction:{mode:'index',intersect:false},
+				spanGaps:true,
+				plugins:{
+					legend:{
+						display:true,
+						labels:{
+							color:c.tick,font:{size:10},usePointStyle:true,pointStyle:'line',
+							filter:item=>!['CI Upper','CI Lower'].includes(item.text)
+						}
+					},
+					tooltip:{
+						mode:'index',intersect:false,
+						callbacks:{
+							label:ctx=>{
+								if(['CI Upper','CI Lower'].includes(ctx.dataset.label))return null;
+								const v=ctx.parsed.y;if(v==null)return null;
+								return ` ${ctx.dataset.label}: ${v.toFixed(1)}${unit}`;
+							}
+						}
+					}
+				},
 				scales:{
-					x:{grid:{color:c.grid},ticks:{color:c.tick,maxTicksLimit:10}},
-					y:{grid:{color:c.grid},ticks:{color:c.tick,callback:v=>v+unit}},
+					x:{grid:{color:c.grid},ticks:{color:c.tick,maxTicksLimit:12,maxRotation:0}},
+					y:{min:0,grid:{color:c.grid},ticks:{color:c.tick,callback:v=>v+unit}},
 				},
 			},
 		});

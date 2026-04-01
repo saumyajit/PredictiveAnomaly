@@ -29,6 +29,7 @@ class CControllerPredictiveAnomalyFleet extends CController {
 			'metric'     => 'required|string',
 			'time_range' => 'in 1h,6h,24h,7d,30d',
 			'model'      => 'in all,zscore,linear',
+			'forecast_days' => 'ge 1',
 		];
 		$ret = $this->validateInput($fields);
 		if (!$ret) {
@@ -47,6 +48,7 @@ class CControllerPredictiveAnomalyFleet extends CController {
 		$metric     = $this->getInput('metric', 'cpu');
 		$time_range = $this->getInput('time_range', '24h');
 
+		$forecast_days = min(90, (int)$this->getInput('forecast_days', 30));
 		$time_map   = ['1h'=>3600,'6h'=>21600,'24h'=>86400,'7d'=>604800,'30d'=>2592000];
 		$time_from  = time() - ($time_map[$time_range] ?? 86400);
 		$time_till  = time();
@@ -193,7 +195,17 @@ class CControllerPredictiveAnomalyFleet extends CController {
 
 		// ── Forecast on aggregated series ────────────────────────────────
 		$engine  = new CAnomalyEngine();
+
+		// Compute how many forecast steps cover $forecast_days
 		$values  = array_column($series, 'value');
+		$clocks  = array_column($series, 'clock');
+		$n_pts   = count($clocks);
+		$inferred_step = $n_pts >= 2
+			? max(60, (int)(($clocks[$n_pts-1] - $clocks[0]) / ($n_pts - 1)))
+			: 3600;
+		$forecast_steps_needed = max(12, (int)ceil(($forecast_days * 86400) / $inferred_step));
+		// Cap at 500 to avoid massive arrays
+		$forecast_steps_needed = min(500, $forecast_steps_needed);
 		$clocks  = array_column($series, 'clock');
 		$z       = $engine->zScoreAnomalyScore($values);
 		$lr      = $engine->linearRegressionForecast($clocks, $values, $time_range, $metric);

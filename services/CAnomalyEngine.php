@@ -139,7 +139,44 @@ class CAnomalyEngine {
 		];
 	}
 
-	private function std(array $values): float {
+	/**
+	 * Same as linearRegressionForecast but with a custom number of forecast steps.
+	 * Used by the Fleet controller for 30-day forecasts.
+	 */
+	public function linearRegressionForecastN(
+		array  $clocks,
+		array  $values,
+		string $time_range  = '24h',
+		string $metric_slug = 'disk',
+		int    $steps       = 30
+	): array {
+		// Temporarily override forecast_steps in config
+		$saved = $this->cfg['forecast_steps'] ?? 12;
+		$this->cfg['forecast_steps'] = $steps;
+		$result = $this->linearRegressionForecast($clocks, $values, $time_range, $metric_slug);
+		$this->cfg['forecast_steps'] = $saved;
+		return $result;
+	}
+
+	/**
+	 * linearRegressionForecast with a custom number of forecast steps.
+	 * Used by Fleet controller to generate 30-day forecasts.
+	 */
+	public function linearRegressionForecastN(
+		array  $clocks,
+		array  $values,
+		string $time_range  = '24h',
+		string $metric_slug = 'disk',
+		int    $steps       = 30
+	): array {
+		$saved = $this->cfg['forecast_steps'] ?? 12;
+		$this->cfg['forecast_steps'] = $steps;
+		$result = $this->linearRegressionForecast($clocks, $values, $time_range, $metric_slug);
+		$this->cfg['forecast_steps'] = $saved;
+		return $result;
+	}
+
+		private function std(array $values): float {
 		$n = count($values); if ($n < 2) return 0;
 		$mean = array_sum($values) / $n;
 		return sqrt(array_sum(array_map(fn($v) => ($v - $mean) ** 2, $values)) / ($n - 1));

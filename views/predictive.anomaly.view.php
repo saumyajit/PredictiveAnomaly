@@ -321,31 +321,62 @@ $severity_levels = $data['severity_levels'] ?? [];
 
 <!-- ═══ TAB: FORECASTS ═══ -->
 <div class="pad-tab-panel" id="tab-forecasts">
-  <!-- Selector bar: pick which group + metric to forecast -->
-  <div class="pad-forecast-bar">
-    <div class="pad-forecast-bar__left">
-      <label class="pad-flabel"><?= _('Host Group') ?></label>
-      <select id="pad-fc-group" class="pad-select">
-        <option value=""><?= _('— Select a group —') ?></option>
-        <?php foreach ($data['all_groups'] as $g): ?>
-        <option value="<?= $g['groupid'] ?>"><?= htmlspecialchars($g['name']) ?></option>
-        <?php endforeach; ?>
-      </select>
+
+  <!--
+    FORECAST CONTROLS — independent from the global filter bar above.
+    The global filter (host groups, metrics chips) is for the Group Overview
+    anomaly scoring. These controls are specifically for the Forecast charts.
+  -->
+  <div class="pad-fc-controls">
+    <div class="pad-fc-controls__label">
+      <span class="pad-fc-controls__badge">📈 Forecast Controls</span>
+      <span class="pad-fc-controls__note"><?= _('Independent from global filter — select group and metric to chart') ?></span>
     </div>
-    <div class="pad-forecast-bar__metrics" id="pad-fc-metrics">
-      <?php foreach ($metric_defs as $slug => $def): ?>
-      <button class="pad-fc-metric-btn <?= $slug==='cpu'?'active':'' ?>"
-              data-metric="<?= $slug ?>">
-        <?= htmlspecialchars($def['icon'].' '.$def['label']) ?>
-      </button>
-      <?php endforeach; ?>
-    </div>
-    <div class="pad-forecast-bar__right">
-      <label class="pad-flabel"><?= _('View') ?></label>
-      <div class="pad-radio-group" id="pad-fc-view">
-        <label class="pad-radio active"><input type="radio" name="fc_view" value="avg" checked hidden/>Avg</label>
-        <label class="pad-radio"><input type="radio" name="fc_view" value="hosts" hidden/>Per Host</label>
+    <div class="pad-fc-controls__row">
+
+      <!-- Group selector — dedicated to Forecasts tab -->
+      <div class="pad-fc-control-field">
+        <label class="pad-flabel"><?= _('Host Group') ?></label>
+        <select id="pad-fc-group" class="pad-select" style="min-width:200px">
+          <option value=""><?= _('— Select a group —') ?></option>
+          <?php foreach ($data['all_groups'] as $g): ?>
+          <option value="<?= $g['groupid'] ?>"><?= htmlspecialchars($g['name']).' ('.$g['host_count'].')' ?></option>
+          <?php endforeach; ?>
+        </select>
       </div>
+
+      <!-- Metric selector -->
+      <div class="pad-fc-control-field">
+        <label class="pad-flabel"><?= _('Metric') ?></label>
+        <div class="pad-forecast-bar__metrics" id="pad-fc-metrics">
+          <?php foreach ($metric_defs as $slug => $def): ?>
+          <button class="pad-fc-metric-btn <?= $slug==='cpu'?'active':'' ?>"
+                  data-metric="<?= $slug ?>">
+            <?= htmlspecialchars($def['icon'].' '.$def['label']) ?>
+          </button>
+          <?php endforeach; ?>
+        </div>
+      </div>
+
+      <!-- Forecast horizon -->
+      <div class="pad-fc-control-field">
+        <label class="pad-flabel"><?= _('Forecast Horizon') ?></label>
+        <div class="pad-radio-group" id="pad-fc-horizon">
+          <label class="pad-radio"><input type="radio" name="fc_horizon" value="7" hidden/>7d</label>
+          <label class="pad-radio active"><input type="radio" name="fc_horizon" value="30" checked hidden/>30d</label>
+          <label class="pad-radio"><input type="radio" name="fc_horizon" value="90" hidden/>90d</label>
+        </div>
+      </div>
+
+      <!-- View mode -->
+      <div class="pad-fc-control-field">
+        <label class="pad-flabel"><?= _('View') ?></label>
+        <div class="pad-radio-group" id="pad-fc-view">
+          <label class="pad-radio active"><input type="radio" name="fc_view" value="avg" checked hidden/><?= _('Fleet Avg') ?></label>
+          <label class="pad-radio"><input type="radio" name="fc_view" value="hosts" hidden/><?= _('Per Host') ?></label>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -354,7 +385,9 @@ $severity_levels = $data['severity_levels'] ?? [];
     <div class="pad-empty" style="padding:48px 0;text-align:center">
       <div style="font-size:32px;margin-bottom:10px">📈</div>
       <div><?= _('Select a host group above to load real Zabbix forecast data') ?></div>
-      <div style="margin-top:6px;font-size:11px;color:var(--pad-text-3)"><?= _('Data is fetched from Zabbix history/trends and projected with linear regression') ?></div>
+      <div style="margin-top:6px;font-size:11px;color:var(--pad-text-3)">
+        <?= _('Historical data from Zabbix trends + 30-day linear regression forecast with 95% confidence interval') ?>
+      </div>
     </div>
   </div>
 </div>

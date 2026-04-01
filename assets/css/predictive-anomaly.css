@@ -363,3 +363,31 @@
 .pad-fc-stat:last-child { border-right:none; }
 .pad-fc-stat__label { font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:.1em; color:var(--pad-text-3); }
 .pad-fc-stat__val   { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--pad-text-1); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* ── Forecast Controls (Issue 3 fix — clearly separated from global filter) */
+.pad-fc-controls {
+  background: var(--pad-bg-surface);
+  border: 1px solid var(--pad-border);
+  border-left: 3px solid #7c3aed;   /* purple accent — distinct from blue global filter */
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+}
+.pad-fc-controls__label {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.pad-fc-controls__badge {
+  font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .08em;
+  background: rgba(124,58,237,.12); color: #a78bfa;
+  border: 1px solid rgba(124,58,237,.3); border-radius: 4px; padding: 2px 8px;
+}
+.pad-fc-controls__note {
+  font-size: 11px; color: var(--pad-text-3); font-style: italic;
+}
+.pad-fc-controls__row {
+  display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap;
+}
+.pad-fc-control-field {
+  display: flex; flex-direction: column; gap: 5px;
+}

@@ -79,7 +79,12 @@ qsa('.pad-tab').forEach(btn=>btn.addEventListener('click',function(){
 	const panel=qs(`#tab-${state.active_tab}`); if(panel) panel.classList.add('active');
 	if(state.active_tab==='forecasts')  renderForecastCharts();
 	if(state.active_tab==='heatmap')    renderHeatmap();
-	if(state.active_tab==='exhaustion') renderExhaustion();
+	if(state.active_tab==='exhaustion'){
+		// Sync state with the DOM selector before rendering
+		const exSel=qs('#pad-ex-metric');
+		if(exSel) state.ex_metric=exSel.value;
+		renderExhaustion();
+	}
 	if(state.active_tab==='models')     renderModels();
 }));
 
@@ -282,7 +287,7 @@ function renderDrilldown(data,groupname){
 			<td><a href="zabbix.php?action=latest.view&hostids[]=${h.hostid}" class="pad-drill-btn" target="_blank">→</a></td>
 		</tr>`;
 	}).join('')||'<tr><td colspan="7" class="pad-empty">No anomalous hosts</td></tr>';
-	tableCard.innerHTML=`<div class="pad-card__head"><div class="pad-card__title">🖥 ${escHtml(groupname)}</div><div class="pad-card__actions"><button class="pad-btn pad-btn--sm">All ${(data.total_hosts||0).toLocaleString()}</button></div></div><div class="pad-table-wrap"><table class="pad-table"><thead><tr><th>Host</th><th>Score</th><th>CPU</th><th>Memory</th><th>Disk</th><th>Breach ETA</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+	tableCard.innerHTML=`<div class="pad-card__head"><div class="pad-card__title">🖥 ${escHtml(groupname)}</div><div class="pad-card__actions"><button class="pad-btn pad-btn--sm">All ${(data.total_hosts||0).toLocaleString()}</button></div></div><div class="pad-table-wrap" style="max-height:400px;overflow-y:auto"><table class="pad-table"><thead><tr><th>Host</th><th>Score</th><th>CPU</th><th>Memory</th><th>Disk</th><th>Breach ETA</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 	body.appendChild(tableCard);
 }
 
@@ -426,11 +431,33 @@ function renderFleetResult(d){
 				datasets.push({label:hs.name,data:hs.points.map(p=>({x:p.x,y:p.y})),borderColor:hs.color,borderWidth:1.5,backgroundColor:'transparent',pointRadius:0,tension:0.3});
 			});
 		}else{
-			// Avg + CI + forecast
-			datasets.push({label:'CI Upper',data:[...new Array(N).fill(null),...upper],borderColor:'transparent',backgroundColor:'rgba(124,58,237,0.1)',fill:'+1',pointRadius:0,tension:0.4});
-			datasets.push({label:'CI Lower',data:[...new Array(N).fill(null),...lower],borderColor:'transparent',fill:false,pointRadius:0,tension:0.4});
-			datasets.push({label:`📈 Forecast (${fc_state.horizon}d)`,data:[...new Array(N-1).fill(null),aVals[N-1],...fVals],borderColor:'#7c3aed',borderDash:[5,4],borderWidth:2,backgroundColor:'transparent',pointRadius:0,tension:0.4});
-			datasets.push({label:'Fleet Average',data:aVals,borderColor:'#2563eb',borderWidth:2,backgroundColor:'transparent',pointBackgroundColor:ptC,pointRadius:ptR,tension:0.3});
+			// Historical bars + forecast line + CI band
+			// CI band (fill between upper and lower)
+			datasets.push({
+				label:'CI Upper',type:'line',
+				data:[...new Array(N).fill(null),...upper],
+				borderColor:'transparent',backgroundColor:'rgba(124,58,237,0.12)',
+				fill:'+1',pointRadius:0,tension:0.3,order:3
+			});
+			datasets.push({
+				label:'CI Lower',type:'line',
+				data:[...new Array(N).fill(null),...lower],
+				borderColor:'transparent',fill:false,pointRadius:0,tension:0.3,order:3
+			});
+			// Forecast line — connects seamlessly from last actual point
+			datasets.push({
+				label:`📈 Forecast (${fc_state.horizon}d)`,type:'line',
+				data:[...new Array(N-1).fill(null),aVals[N-1],...fVals],
+				borderColor:'#a855f7',borderDash:[6,3],borderWidth:2,
+				backgroundColor:'transparent',pointRadius:0,tension:0.3,order:2
+			});
+			// Historical data as BAR chart — easy to distinguish from forecast
+			datasets.push({
+				label:'Fleet Avg (actual)',type:'bar',
+				data:aVals,
+				backgroundColor:aVals.map(v=>v>=(d.stats?.breach_threshold||85)?'rgba(239,68,68,0.7)':v>=70?'rgba(245,158,11,0.7)':'rgba(37,99,235,0.6)'),
+				borderColor:'transparent',borderWidth:0,order:1
+			});
 		}
 
 		// For per-host view: build unified label array from all host timestamps

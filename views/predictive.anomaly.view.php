@@ -294,7 +294,7 @@ $severity_levels = $data['severity_levels'] ?? [];
           <span class="pad-tag pad-tag--native">Linear Regression</span>
           <select id="pad-ex-metric" class="pad-select pad-select--sm">
             <?php foreach ($metric_defs as $slug => $def): ?>
-            <option value="<?= $slug ?>"><?= htmlspecialchars($def['icon'].' '.$def['label']) ?></option>
+            <option value="<?= $slug ?>" <?= $slug==='disk'?'selected':'' ?>><?= htmlspecialchars($def['icon'].' '.$def['label']) ?></option>
             <?php endforeach; ?>
           </select>
         </div>
@@ -419,7 +419,7 @@ $severity_levels = $data['severity_levels'] ?? [];
         <button class="pad-drawer__close" id="pad-drawer-close">✕</button>
       </div>
     </div>
-    <div class="pad-drawer__body" id="pad-drawer-body">
+    <div class="pad-drawer__body" id="pad-drawer-body" style="overflow-y:auto;max-height:calc(100vh - 80px)">
       <div class="pad-spinner-wrap"><div class="pad-spinner"></div></div>
     </div>
   </div>

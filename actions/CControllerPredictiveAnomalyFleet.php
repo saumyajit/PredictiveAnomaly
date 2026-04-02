@@ -2,17 +2,17 @@
 /**
  * Action: predictive.anomaly.fleet  (JSON — no view/layout in manifest)
  *
- * Powers the Forecasts tab. Returns real Zabbix history/trend data
- * aggregated across all hosts in a group for a given metric.
- * Also runs linear regression to produce forecast + CI band.
+ * Powers the Forecasts tab with real Zabbix data.
+ * Always uses hourly trend buckets for forecasting so step size is
+ * predictable regardless of the time_range display setting.
  *
- * Called by JS when user selects a group + metric in the Forecasts tab.
+ * Forecast horizon: user-selected days (7/30/90).
+ * At 3600s/step, 30 days = 720 steps — well within reasonable bounds.
  */
 
 namespace Modules\PredictiveAnomaly\actions;
 
 use CController;
-use CControllerResponseFatal;
 use API;
 use Modules\PredictiveAnomaly\services\CAnomalyEngine;
 use Modules\PredictiveAnomaly\services\MetricConfig;
@@ -25,17 +25,13 @@ class CControllerPredictiveAnomalyFleet extends CController {
 
 	protected function checkInput(): bool {
 		$fields = [
-			'groupid'    => 'required|id',
-			'metric'     => 'required|string',
-			'time_range' => 'in 1h,6h,24h,7d,30d',
-			'model'      => 'in all,zscore,linear',
+			'groupid'       => 'required|id',
+			'metric'        => 'required|string',
+			'time_range'    => 'in 1h,6h,24h,7d,30d',
 			'forecast_days' => 'ge 1',
 		];
 		$ret = $this->validateInput($fields);
-		if (!$ret) {
-			// invalid input — sendJson error
-			$this->sendJson(['error' => 'Invalid input']);
-		}
+		if (!$ret) $this->sendJson(['error' => 'Invalid input']);
 		return $ret;
 	}
 
@@ -44,26 +40,24 @@ class CControllerPredictiveAnomalyFleet extends CController {
 	}
 
 	protected function doAction(): void {
-		$groupid    = $this->getInput('groupid');
-		$metric     = $this->getInput('metric', 'cpu');
-		$time_range = $this->getInput('time_range', '24h');
+		$groupid       = $this->getInput('groupid');
+		$metric        = $this->getInput('metric', 'cpu');
+		$time_range    = $this->getInput('time_range', '24h');
+		$forecast_days = min(90, max(1, (int)$this->getInput('forecast_days', 30)));
 
-		$forecast_days = min(90, (int)$this->getInput('forecast_days', 30));
-		$time_map   = ['1h'=>3600,'6h'=>21600,'24h'=>86400,'7d'=>604800,'30d'=>2592000];
-		$time_from  = time() - ($time_map[$time_range] ?? 86400);
-		$time_till  = time();
-		$use_trends = in_array($time_range, ['7d', '30d']);
+		// ── Historical window for actual data ─────────────────────────────
+		$time_map  = ['1h'=>3600,'6h'=>21600,'24h'=>86400,'7d'=>604800,'30d'=>2592000];
+		$hist_secs = $time_map[$time_range] ?? 86400;
+		$time_from = time() - $hist_secs;
+		$time_till = time();
 
 		// ── Group info ────────────────────────────────────────────────────
-		$groups = API::HostGroup()->get([
-			'output'   => ['groupid', 'name'],
-			'groupids' => [$groupid],
-		]);
+		$groups = API::HostGroup()->get(['output'=>['groupid','name'],'groupids'=>[$groupid]]);
 		$group_name = $groups ? reset($groups)['name'] : 'Unknown';
 
-		// ── Hosts in group ────────────────────────────────────────────────
+		// ── Hosts ─────────────────────────────────────────────────────────
 		$hosts = API::Host()->get([
-			'output'          => ['hostid', 'name'],
+			'output'          => ['hostid','name'],
 			'groupids'        => [$groupid],
 			'monitored_hosts' => true,
 			'preservekeys'    => true,
@@ -71,25 +65,19 @@ class CControllerPredictiveAnomalyFleet extends CController {
 		]);
 
 		if (!$hosts) {
-			$this->sendJson(['error' => 'No monitored hosts in group', 'group' => $group_name, 'series' => [], 'forecast' => []]);
+			$this->sendJson(['error'=>'No monitored hosts','group'=>$group_name,'series'=>[],'forecast'=>[]]);
 			return;
 		}
 
-		// ── Metric key patterns ───────────────────────────────────────────
-		$all_keys = MetricConfig::keyMap([$metric]);
-		$key_patterns = $all_keys[$metric] ?? [];
-		if (!$key_patterns) {
-			$this->sendJson(['error' => "Metric '$metric' not found in config/metrics.php"]);
-			return;
-		}
-
-		$metric_def = MetricConfig::enabled()[$metric] ?? ['label'=>$metric,'unit'=>'%','icon'=>'📊'];
-		$hostids    = array_keys($hosts);
-
-		// Search all key patterns for this metric
+		// ── Items ─────────────────────────────────────────────────────────
+		$all_keys        = MetricConfig::keyMap([$metric]);
+		$key_patterns    = $all_keys[$metric] ?? [];
+		$metric_def      = MetricConfig::enabled()[$metric] ?? ['label'=>$metric,'unit'=>'%','icon'=>'📊'];
+		$hostids         = array_keys($hosts);
 		$search_patterns = array_map(fn($p) => explode('[', $p)[0], $key_patterns);
+
 		$items = API::Item()->get([
-			'output'       => ['itemid', 'hostid', 'name', 'key_', 'units'],
+			'output'       => ['itemid','hostid','name','key_','units'],
 			'hostids'      => $hostids,
 			'search'       => ['key_' => $search_patterns],
 			'searchByAny'  => true,
@@ -99,37 +87,41 @@ class CControllerPredictiveAnomalyFleet extends CController {
 			'limit'        => count($hostids) * 3,
 		]);
 
-		// Filter to correct unit (% not bytes for memory/disk)
 		$items = MetricConfig::filterItemsByUnit($items, $metric);
 
 		if (!$items) {
 			$this->sendJson([
-				'error'  => "No items matching metric '$metric' with correct unit in group '$group_name'",
-				'group'  => $group_name,
-				'metric' => $metric_def['label'],
+				'error'  => "No items for metric '$metric' with correct units in '$group_name'",
+				'group'  => $group_name, 'metric' => $metric_def['label'],
 				'series' => [], 'forecast' => [],
 			]);
 			return;
 		}
 
-		// ── Fetch data ────────────────────────────────────────────────────
 		$itemids = array_keys($items);
-		$raw     = [];
+
+		// ── Historical data: ALWAYS use trends (hourly = reliable step size) ──
+		// For shorter ranges, fall back to history but bucket into hourly averages.
+		$use_trends = ($hist_secs >= 86400);  // use trends for 24h+
+		$raw = [];
 
 		if ($use_trends) {
 			$rows = API::Trend()->get([
-				'output'    => ['itemid', 'clock', 'value_avg'],
+				'output'    => ['itemid','clock','value_avg'],
 				'itemids'   => $itemids,
 				'time_from' => $time_from,
 				'time_till' => $time_till,
 				'limit'     => 50000,
 			]);
 			foreach ($rows as $row) {
-				$raw[$row['itemid']][] = ['clock' => (int)$row['clock'], 'value' => (float)$row['value_avg']];
+				$iid = $row['itemid'];
+				$val = MetricConfig::normalizeValue((float)$row['value_avg'], $items[$iid]['key_']??'', $metric);
+				$raw[$iid][] = ['clock' => (int)$row['clock'], 'value' => min(100, max(0, $val))];
 			}
 		} else {
+			// Short range: fetch history, then bucket to hourly averages
 			$rows = API::History()->get([
-				'output'    => ['itemid', 'clock', 'value'],
+				'output'    => ['itemid','clock','value'],
 				'itemids'   => $itemids,
 				'time_from' => $time_from,
 				'time_till' => $time_till,
@@ -138,139 +130,123 @@ class CControllerPredictiveAnomalyFleet extends CController {
 				'sortorder' => 'ASC',
 				'limit'     => 100000,
 			]);
+			// Bucket into hourly averages so step size is consistent
+			$hourly = [];
 			foreach ($rows as $row) {
-				$raw[$row['itemid']][] = ['clock' => (int)$row['clock'], 'value' => (float)$row['value']];
+				$iid    = $row['itemid'];
+				$bucket = (int)(floor($row['clock'] / 3600) * 3600);
+				$val    = MetricConfig::normalizeValue((float)$row['value'], $items[$iid]['key_']??'', $metric);
+				$val    = min(100, max(0, $val));
+				$hourly[$iid][$bucket]['sum']   = ($hourly[$iid][$bucket]['sum']   ?? 0) + $val;
+				$hourly[$iid][$bucket]['count'] = ($hourly[$iid][$bucket]['count'] ?? 0) + 1;
+			}
+			foreach ($hourly as $iid => $buckets) {
+				ksort($buckets);
+				foreach ($buckets as $clock => $agg) {
+					$raw[$iid][] = ['clock' => $clock, 'value' => round($agg['sum']/$agg['count'], 2)];
+				}
 			}
 		}
 
-		// ── Aggregate: average across all items at each clock step ───────
-		// Group by clock bucket, average value across all items
-		$bucket_sums   = [];
-		$bucket_counts = [];
-
+		// ── Aggregate: hourly fleet average across all items ──────────────
+		$bucket_sums = []; $bucket_counts = [];
 		foreach ($raw as $iid => $points) {
 			foreach ($points as $pt) {
-				$bucket = $pt['clock'];
-				// Normalize: pavailable → invert; clamp to [0,100] for % metrics
-				$item_key = $items[$iid]['key_'] ?? '';
-				$val = MetricConfig::normalizeValue($pt['value'], $item_key, $metric);
-				$val = min(100.0, max(0.0, $val));
-				$bucket_sums[$bucket]   = ($bucket_sums[$bucket]   ?? 0) + $val;
-				$bucket_counts[$bucket] = ($bucket_counts[$bucket] ?? 0) + 1;
+				$b = $pt['clock'];
+				$bucket_sums[$b]   = ($bucket_sums[$b]   ?? 0) + $pt['value'];
+				$bucket_counts[$b] = ($bucket_counts[$b] ?? 0) + 1;
 			}
 		}
-
 		ksort($bucket_sums);
+
 		$series = [];
 		foreach ($bucket_sums as $clock => $sum) {
-			$series[] = [
-				'clock' => $clock,
-				'value' => round($sum / $bucket_counts[$clock], 2),
-			];
+			$series[] = ['clock' => $clock, 'value' => round($sum / $bucket_counts[$clock], 2)];
 		}
 
 		if (count($series) < 5) {
 			$this->sendJson([
-				'error'  => 'Insufficient data points for forecasting (need ≥5)',
-				'group'  => $group_name,
-				'metric' => $metric_def['label'],
+				'error'  => 'Insufficient data (need ≥5 hourly points). Try a longer time range.',
+				'group'  => $group_name, 'metric' => $metric_def['label'],
 				'series' => [], 'forecast' => [],
 			]);
 			return;
 		}
 
-		// ── Per-host series for multi-line view ───────────────────────────
-		$host_series = [];
-		foreach ($raw as $iid => $points) {
-			if (!isset($items[$iid])) continue;
-			$hid  = $items[$iid]['hostid'];
-			$name = $hosts[$hid]['name'] ?? "Host $hid";
-			if (!isset($host_series[$hid])) {
-				$host_series[$hid] = ['name' => $name, 'points' => []];
-			}
-			foreach ($points as $pt) {
-				$host_series[$hid]['points'][] = $pt;
-			}
-		}
+		// ── Forecast ─────────────────────────────────────────────────────
+		$engine = new CAnomalyEngine();
+		$values = array_column($series, 'value');
+		$clocks = array_column($series, 'clock');
 
-		// ── Forecast on aggregated series ────────────────────────────────
-		$engine  = new CAnomalyEngine();
+		// Step size is always 3600s (hourly buckets) → N steps = N hours
+		// forecast_days * 24 = forecast_steps at 1h resolution
+		$forecast_steps = $forecast_days * 24;
+		// Cap at 720 (30d) to keep response size reasonable for long horizons
+		$forecast_steps = min($forecast_steps, 720);
 
-		// Compute how many forecast steps cover $forecast_days
-		$values  = array_column($series, 'value');
-		$clocks  = array_column($series, 'clock');
-		$n_pts   = count($clocks);
-		$inferred_step = $n_pts >= 2
-			? max(60, (int)(($clocks[$n_pts-1] - $clocks[0]) / ($n_pts - 1)))
-			: 3600;
-		$forecast_steps_needed = max(12, (int)ceil(($forecast_days * 86400) / $inferred_step));
-		// Cap at 500 to avoid massive arrays
-		$forecast_steps_needed = min(500, $forecast_steps_needed);
-		$clocks  = array_column($series, 'clock');
-		$z       = $engine->zScoreAnomalyScore($values);
-		$lr      = $engine->linearRegressionForecast($clocks, $values, $time_range, $metric);
+		$z  = $engine->zScoreAnomalyScore($values);
+		$lr = $engine->linearRegressionForecastN($clocks, $values, $time_range, $metric, $forecast_steps);
 
-		// Build step size from data
-		$n    = count($clocks);
-		$step = $n >= 2 ? max((int)(($clocks[$n-1] - $clocks[0]) / ($n - 1)), 60) : 3600;
+		// ── Build output series ───────────────────────────────────────────
+		$step = 3600; // always hourly
 		$last = end($clocks);
+		$anomaly_set = array_flip($z['anomaly_indices']);
 
 		$series_out = [];
-		$anomaly_set = array_flip($z['anomaly_indices']);
 		foreach ($series as $i => $pt) {
-			$series_out[] = [
-				'x'       => $pt['clock'] * 1000,
-				'y'       => $pt['value'],
-				'anomaly' => isset($anomaly_set[$i]),
-			];
+			$series_out[] = ['x' => $pt['clock'] * 1000, 'y' => $pt['value'], 'anomaly' => isset($anomaly_set[$i])];
 		}
 
 		$forecast_out = [];
 		foreach ($lr['forecast_series'] as $i => $fval) {
 			$forecast_out[] = [
 				'x'     => ($last + ($i + 1) * $step) * 1000,
-				'y'     => round($fval, 2),
-				'upper' => round($lr['ci_upper'][$i] ?? $fval, 2),
-				'lower' => round($lr['ci_lower'][$i] ?? $fval, 2),
+				'y'     => round(max(0, min(100, $fval)), 2),
+				'upper' => round(max(0, min(100, $lr['ci_upper'][$i] ?? $fval)), 2),
+				'lower' => round(max(0, min(100, $lr['ci_lower'][$i] ?? $fval)), 2),
 			];
 		}
 
-		// Host series for multi-line chart
+		// ── Per-host series (last point for sparklines + legend) ──────────
 		$colors = ['#2563eb','#ef4444','#10b981','#f59e0b','#7c3aed','#06b6d4','#f97316','#ec4899'];
-		$host_series_out = [];
+		$host_series = [];
 		$ci = 0;
-		foreach ($host_series as $hid => $hs) {
-			if (count($hs['points']) < 3) continue;
-			usort($hs['points'], fn($a,$b) => $a['clock'] - $b['clock']);
-			$host_series_out[] = [
-				'name'   => $hs['name'],
+		foreach ($raw as $iid => $points) {
+			if (!isset($items[$iid])) continue;
+			$hid  = $items[$iid]['hostid'];
+			if (isset($host_series[$hid])) continue; // one item per host
+			$name = $hosts[$hid]['name'] ?? "Host $hid";
+			usort($points, fn($a,$b) => $a['clock'] - $b['clock']);
+			$host_series[] = [
+				'name'   => $name,
 				'color'  => $colors[$ci % count($colors)],
-				'points' => array_map(fn($p) => ['x' => $p['clock']*1000, 'y' => $p['value']], $hs['points']),
+				'points' => array_map(fn($p) => ['x'=>$p['clock']*1000,'y'=>$p['value']], $points),
 			];
 			$ci++;
-			if ($ci >= 8) break; // max 8 hosts on one chart
+			if ($ci >= 8) break;
 		}
 
 		$this->sendJson([
-			'group'        => $group_name,
-			'groupid'      => $groupid,
-			'metric'       => $metric_def['label'],
-			'metric_slug'  => $metric,
-			'unit'         => $metric_def['unit'] ?? '%',
-			'icon'         => $metric_def['icon'] ?? '📊',
-			'item_count'   => count($items),
-			'host_count'   => count($hosts),
-			'series'       => $series_out,        // aggregated average
-			'forecast'     => $forecast_out,
-			'host_series'  => $host_series_out,   // per-host lines
-			'stats' => [
-				'mean'       => round($z['mean'], 2),
-				'max_z'      => round($z['max_z'], 2),
-				'score'      => round($z['score'], 3),
-				'slope'      => round($lr['slope'], 5),
-				'breach_eta' => $lr['breach_eta'],
-				'breach_threshold' => $lr['breach_threshold'],
-				'r_squared'  => round($lr['r_squared'], 3),
+			'group'       => $group_name,
+			'groupid'     => $groupid,
+			'metric'      => $metric_def['label'],
+			'metric_slug' => $metric,
+			'unit'        => $metric_def['unit'] ?? '%',
+			'icon'        => $metric_def['icon'] ?? '📊',
+			'item_count'  => count($items),
+			'host_count'  => count($hosts),
+			'step_hours'  => 1,
+			'series'      => $series_out,
+			'forecast'    => $forecast_out,
+			'host_series' => $host_series,
+			'stats'       => [
+				'mean'              => round($z['mean'], 2),
+				'max_z'             => round($z['max_z'], 2),
+				'score'             => round($z['score'], 3),
+				'slope'             => round($lr['slope'], 6),
+				'breach_eta'        => $lr['breach_eta'],
+				'breach_threshold'  => $lr['breach_threshold'] ?? 85,
+				'r_squared'         => round($lr['r_squared'], 3),
 			],
 		]);
 	}

@@ -253,14 +253,18 @@ class CControllerPredictiveAnomalyData extends CController {
 				}
 				$alerts += count(array_filter($all_scores, fn($s) => $s >= 0.7));
 
-				// Average current metric value for table columns
+				// Average current metric value — MUST use normalized values (same as scoring)
 				$avg_val = 0;
 				$cnt     = 0;
 				foreach ($items as $item) {
 					$iid  = $item['itemid'];
 					$vals = $trend_data[$iid] ?? [];
 					if ($vals) {
-						$col = array_column($vals, 'value'); $avg_val += end($col);
+						$col     = array_column($vals, 'value');
+						$raw_last = end($col);
+						// Apply same normalization as scoring: invert pavailable, clamp to [0,100]
+						$normalized = min(100.0, max(0.0, \Modules\PredictiveAnomaly\services\MetricConfig::normalizeValue($raw_last, $item['key_'], $slug)));
+						$avg_val += $normalized;
 						$cnt++;
 					}
 				}
@@ -279,19 +283,14 @@ class CControllerPredictiveAnomalyData extends CController {
 		$min_days  = (int)($thresholds_cfg['maintenance_min_days']  ?? 1);
 		$ex_cfg    = $thresholds_cfg['exhaustion_thresholds'] ?? [];
 
-		// Add entries for metrics already AT or NEAR threshold
+		// Only flag "already breached" when normalized value genuinely exceeds threshold
+		// Normalized = pavailable already inverted, so this reflects true % used
 		foreach ($metric_avgs as $mslug => $avg_val) {
-			if (!is_numeric($avg_val)) continue;
+			if (!is_numeric($avg_val) || $avg_val <= 0) continue;
 			$mthreshold = (float)($ex_cfg[$mslug] ?? 0);
-			if ($mthreshold <= 0) continue;
-			if ($avg_val >= $mthreshold && !isset($breach_etas[$mslug])) {
-				// Already breached
+			if ($mthreshold <= 0 || $avg_val < $mthreshold) continue;
+			if (!isset($breach_etas[$mslug])) {
 				$breach_etas[$mslug] = ['eta_seconds' => 0, 'threshold' => $mthreshold, 'host' => $worst_host];
-			} elseif ($avg_val >= ($mthreshold - 12) && !isset($breach_etas[$mslug])) {
-				// Within 12% of threshold — estimate days at ~0.3%/day growth
-				$gap      = $mthreshold - $avg_val;
-				$est_secs = max(86400, (int)(($gap / 0.3) * 86400));
-				$breach_etas[$mslug] = ['eta_seconds' => $est_secs, 'threshold' => $mthreshold, 'host' => $worst_host];
 			}
 		}
 
